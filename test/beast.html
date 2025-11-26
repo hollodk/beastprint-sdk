@@ -1,0 +1,81 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>BeastPrint API Test</title>
+  </head>
+  <body>
+    <h1>BeastPrint API Test</h1>
+    <button id="btn-beast-template">BeastPrint: template mode</button>
+    <button id="btn-beast-html">BeastPrint: html mode</button>
+    <pre id="log"></pre>
+
+    <script type="module">
+      import { print } from '../dist/index.esm.js';
+
+      const logEl = document.getElementById('log');
+      const log = (msg) => {
+        console.log(msg);
+        if (logEl) {
+          logEl.textContent += `${msg}\n`;
+        }
+      };
+
+      const printer = {
+        key: 'REPLACE_WITH_REAL_PRINTER_KEY',
+        profileKey: 'epson-tm-m30ii'
+      };
+
+      document
+        .getElementById('btn-beast-template')
+        ?.addEventListener('click', async () => {
+          log('Calling BeastPrint (template mode)...');
+          try {
+            await print({
+              strategy: 'beast',
+              beast: {
+                mode: 'template',
+                templateId: 'default-receipt',
+                widthMm: 80,
+                data: {
+                  store: { name: 'Guestify' },
+                  time: new Date().toISOString()
+                },
+                printer
+              }
+            });
+            log('BeastPrint (template) succeeded');
+          } catch (err) {
+            log('BeastPrint (template) FAILED: ' + err);
+          }
+        });
+
+      document
+        .getElementById('btn-beast-html')
+        ?.addEventListener('click', async () => {
+          log('Calling BeastPrint (html mode)...');
+          try {
+            await print({
+              strategy: 'beast',
+              beast: {
+                mode: 'html',
+                widthMm: 80,
+                html: `
+                  <html>
+                    <body>
+                      <h1>BeastPrint HTML mode</h1>
+                      <p>Printed via BeastPrint service.</p>
+                    </body>
+                  </html>
+                `,
+                printer
+              }
+            });
+            log('BeastPrint (html) succeeded');
+          } catch (err) {
+            log('BeastPrint (html) FAILED: ' + err);
+          }
+        });
+    </script>
+  </body>
+</html>
