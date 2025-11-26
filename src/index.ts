@@ -1,6 +1,17 @@
 export type LegacyPrintOptions = {
   html?: string;   // raw HTML string to print
   url?: string;    // URL to open and print
+
+  // Page / print CSS size control
+  pageWidthMm?: number;   // e.g. 80 for 80mm receipt paper
+  pageHeightMm?: number;  // optional; if omitted, browser paginates
+  marginMm?: number;      // uniform margin in mm (default 0)
+  hideAppChrome?: boolean; // hide header/footer/nav etc in print
+
+  // Popup-style printing (alternative to iframe)
+  popup?: boolean;        // if true, open new window instead of iframe
+  popupWidthPx?: number;  // popup window width in pixels
+  popupHeightPx?: number; // popup window height in pixels
 };
 
 export type BeastPrintPrinter = {
@@ -60,6 +71,83 @@ export async function print(options: PrintOptions = {}): Promise<void> {
   throw new Error('[beastprint] No valid print configuration provided');
 }
 
+function buildLegacyPrintHtml(html: string, options?: LegacyPrintOptions): string {
+  const pageWidthMm = options?.pageWidthMm;
+  const pageHeightMm = options?.pageHeightMm;
+  const marginMm = options?.marginMm ?? 0;
+  const hideAppChrome = options?.hideAppChrome ?? true;
+
+  // Build @page rule bits
+  const pageRules: string[] = [];
+  if (pageWidthMm) {
+    pageRules.push(
+      `size: ${pageWidthMm}mm${pageHeightMm ? ` ${pageHeightMm}mm` : ''};`
+    );
+  }
+  pageRules.push(`margin: ${marginMm}mm;`);
+
+  // Hide common app chrome elements if requested
+  const hideChromeCss = hideAppChrome
+    ? `
+      header, footer, nav,
+      .site-header, .site-footer,
+      .app-header, .app-footer {
+        display: none !important;
+      }
+    `
+    : '';
+
+  // Detect if user passed a full HTML document
+  const hasHtmlTag = /<html[\s>]/i.test(html);
+
+  if (hasHtmlTag) {
+    const styleBlock = `
+      <style>
+        @page {
+          ${pageRules.join('\n          ')}
+        }
+        body {
+          margin: 0;
+          padding: 0;
+        }
+        ${hideChromeCss}
+      </style>
+    `;
+
+    if (/<head[\s>]/i.test(html)) {
+      // Inject into existing <head>
+      return html.replace(/<head([\s>])/i, `<head$1${styleBlock}`);
+    }
+
+    // No <head>, just prepend style
+    return styleBlock + html;
+  }
+
+  // Fragment: wrap in full document
+  return `
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Print</title>
+    <style>
+      @page {
+        ${pageRules.join('\n        ')}
+      }
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      ${hideChromeCss}
+    </style>
+  </head>
+  <body>
+    ${html}
+  </body>
+</html>
+`;
+}
+
 async function legacyPrint(options?: LegacyPrintOptions): Promise<void> {
   // If nothing is specified, just call browser print
   if (!options || (!options.html && !options.url)) {
@@ -70,13 +158,20 @@ async function legacyPrint(options?: LegacyPrintOptions): Promise<void> {
     throw new Error('[beastprint] window.print() is not available');
   }
 
-  // Case: URL printing
+  // Case: URL printing (popup-based)
   if (options.url) {
     if (typeof window === 'undefined') {
       throw new Error('[beastprint] Cannot open window in non-browser environment');
     }
 
-    const win = window.open(options.url, '_blank');
+    const features = [
+      options.popupWidthPx ? `width=${options.popupWidthPx}` : '',
+      options.popupHeightPx ? `height=${options.popupHeightPx}` : '',
+    ]
+      .filter(Boolean)
+      .join(',');
+
+    const win = window.open(options.url, '_blank', features || undefined);
     if (!win) {
       throw new Error('[beastprint] Popup blocked or failed to open window');
     }
@@ -99,6 +194,44 @@ async function legacyPrint(options?: LegacyPrintOptions): Promise<void> {
       throw new Error('[beastprint] Cannot create iframe in non-browser environment');
     }
 
+    const finalHtml = buildLegacyPrintHtml(options.html, options);
+
+    // Popup mode for HTML (legacy-compatible)
+    if (options.popup) {
+      const features = [
+        options.popupWidthPx ? `width=${options.popupWidthPx}` : '',
+        options.popupHeightPx ? `height=${options.popupHeightPx}` : '',
+      ]
+        .filter(Boolean)
+        .join(',');
+
+      const win = window.open('', '_blank', features || undefined);
+      if (!win) {
+        throw new Error('[beastprint] Popup blocked or failed to open window');
+      }
+
+      win.document.open();
+      win.document.write(finalHtml);
+      win.document.close();
+
+      win.addEventListener('load', () => {
+        try {
+          win.focus();
+          win.print();
+        } catch (err) {
+          console.error('[beastprint] Failed to print from opened popup', err);
+        } finally {
+          // optional auto-close
+          setTimeout(() => {
+            win.close();
+          }, 1000);
+        }
+      });
+
+      return;
+    }
+
+    // Default: iframe-based printing (no visible popup)
     const iframe = document.createElement('iframe');
     iframe.style.position = 'fixed';
     iframe.style.right = '0';
@@ -118,7 +251,7 @@ async function legacyPrint(options?: LegacyPrintOptions): Promise<void> {
 
     const doc = iframeWindow.document;
     doc.open();
-    doc.write(options.html);
+    doc.write(finalHtml);
     doc.close();
 
     iframe.onload = () => {

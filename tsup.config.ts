@@ -1,15 +1,25 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig([
-  // Library bundle (ESM + CJS)
+  // ESM bundle -> dist/index.esm.js
+  {
+    entry: {
+      'index.esm': 'src/index.ts',
+    },
+    format: ['esm'],
+    dts: {
+      entry: 'src/index.ts',
+    },
+    sourcemap: true,
+    clean: true,
+  },
+  // CJS bundle -> dist/index.cjs
   {
     entry: {
       index: 'src/index.ts',
     },
-    format: ['esm', 'cjs'],
-    dts: true,
+    format: ['cjs'],
     sourcemap: true,
-    clean: true,
   },
   // Browser-global bundle (attaches window.beastprint)
   {
