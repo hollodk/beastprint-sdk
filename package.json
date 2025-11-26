@@ -1,5 +1,7 @@
 {
-  "name": "beastprint",
+  "name": "beastprint-sdk",
+  "version": "0.1.0",
+  "description": "Unified legacy browser printing and BeastPrint cloud printing.",
   "type": "module",
   "main": "dist/index.cjs",
   "module": "dist/index.esm.js",
@@ -9,11 +11,31 @@
       "require": "./dist/index.cjs"
     }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
     "build:watch": "tsup --watch",
     "test:server": "serve ."
   },
+  "keywords": [
+    "print",
+    "beastprint",
+    "browser-print",
+    "receipt",
+    "sdk"
+  ],
+  "author": "Michael Holm <hollo@hollo.dk>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hollodk/beastprint-sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hollodk/beastprint-sdk/issues"
+  },
+  "homepage": "https://github.com/hollodk/beastprint-sdk#readme",
   "devDependencies": {
     "serve": "^14.2.0",
     "tsup": "^8.0.0",
