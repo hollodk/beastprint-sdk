@@ -111,6 +111,10 @@ export type LegacyPrintOptions = {
   popup?: boolean;        // if true, open new window instead of iframe
   popupWidthPx?: number;  // popup window width in pixels
   popupHeightPx?: number; // popup window height in pixels
+
+  // URL-in-iframe mode (non-popup, stays on the same page)
+  // Note: currently URL printing defaults to iframe when popup is false.
+  urlInIframe?: boolean;
 };
 
 export type BeastPrintPrinter = {
@@ -127,12 +131,28 @@ export type BeastPrintOptions = {
   html?: string;   // used when mode === 'html'
 };
 
-export type PrintStrategy = 'auto' | 'legacy' | 'beast';
+export type PrintdeskOptions = {
+  printerId: string;
+  saleId: string;
+  sample: boolean;
+  /**
+   * Backend URL that returns the payload for the local Printdesk service.
+   * Equivalent to the old `printUrl` in the jQuery example.
+   */
+  printUrl: string;
+  /**
+   * Local Printdesk endpoint, defaults to 'http://127.0.0.1:43594/print'.
+   */
+  localUrl?: string;
+};
+
+export type PrintStrategy = 'auto' | 'legacy' | 'beast' | 'printdesk';
 
 export type PrintOptions = {
   strategy?: PrintStrategy;
   legacy?: LegacyPrintOptions;
   beast?: BeastPrintOptions;
+  printdesk?: PrintdeskOptions;
 };
 ```
 
@@ -150,6 +170,8 @@ await print({
   Always use the legacy browser-based print behavior.
 - `strategy: 'beast'`  
   Always use the BeastPrint cloud endpoint.
+- `strategy: 'printdesk'`  
+  Always use the Printdesk local service integration.
 - `strategy: 'auto'` (default)  
   - If valid BeastPrint configuration is present, try BeastPrint first.
   - If BeastPrint fails or config is missing, fall back to legacy printing.
@@ -196,6 +218,19 @@ This:
 
 Use this if you already have print-optimized routes.
 
+By default (when `popup` is not set), URL printing loads the URL into a hidden iframe and prints from there, so the user stays on the current page:
+
+```ts
+await print({
+  strategy: 'legacy',
+  legacy: {
+    url: '/receipt/123',
+    // popup: false by default → uses hidden iframe
+    // urlInIframe: true can be used to make this explicit
+  },
+});
+```
+
 ### 3. Print HTML directly (iframe, default)
 
 ```ts
@@ -214,6 +249,12 @@ await print({
   },
 });
 ```
+
+Layout-related options:
+
+- `pageWidthMm` / `pageHeightMm` – used in a `@page { size: ... }` rule to hint the physical paper size (e.g. 80mm receipt, label height, etc.).
+- `marginMm` – used in `@page { margin: ... }` to control printer margins.
+- `hideAppChrome` – injects CSS to hide typical layout elements like `header`, `footer`, `.site-header`, `.site-footer`, `.app-header`, `.app-footer` inside the printed document.
 
 - The HTML is wrapped into a minimal standalone document.
 - `@page` is configured based on `pageWidthMm`, `pageHeightMm`, `marginMm`.
@@ -248,7 +289,24 @@ await print({
 - The same `@page` and CSS rules are applied to control printed layout.
 - The popup auto-prints and then (optionally) auto-closes.
 
+Popup sizing options:
+
+- `popupWidthPx` / `popupHeightPx` – control the pixel size of the popup window when `popup: true`.
+
 > Note: browsers and printer drivers ultimately decide how strictly to honor `@page size` and margins. This library sets the correct CSS, but physical results can vary by device.
+
+### Legacy options reference
+
+- `html?: string` – raw HTML string to print.
+- `url?: string` – URL to open and print.
+- `pageWidthMm?: number` – physical page width hint in millimeters.
+- `pageHeightMm?: number` – physical page height hint in millimeters.
+- `marginMm?: number` – printer margin hint in millimeters.
+- `hideAppChrome?: boolean` – hide common app header/footer/nav elements in the printed document.
+- `popup?: boolean` – if `true`, use a separate popup window instead of an iframe (for both `url` and `html`).
+- `popupWidthPx?: number` – popup window width in pixels (when `popup: true`).
+- `popupHeightPx?: number` – popup window height in pixels (when `popup: true`).
+- `urlInIframe?: boolean` – explicitly request URL-in-iframe printing (by default, URLs are printed via iframe when `popup` is not set).
 
 ---
 
@@ -311,6 +369,60 @@ await print({
 ```
 
 If BeastPrint responds with a non-2xx status, `print` throws an error with the status code and response body text (if available).
+
+---
+
+## Printdesk local printing
+
+The **Printdesk** path is a convenience wrapper around a legacy local print service:
+
+1. Call your backend (`printUrl`) with query parameters `{ printer, sale, sample }`.
+2. Take the backend response (expected JSON) and forward it as a JSON `POST` to a local service (default `http://127.0.0.1:43594/print`).
+
+Example:
+
+```ts
+await print({
+  strategy: 'printdesk',
+  printdesk: {
+    printerId: 'PRINTER_123',
+    saleId: 'SALE_456',
+    sample: false,
+    printUrl: 'https://your-backend.example.com/printdesk',
+    // localUrl: 'http://127.0.0.1:43594/print', // optional override
+  },
+});
+```
+
+This corresponds roughly to the legacy jQuery pattern:
+
+```js
+function printdesk(printerId, sample, saleId) {
+  $.ajax({
+    url: printUrl,
+    data: {
+      printer: printerId,
+      sale: saleId,
+      sample: sample,
+    },
+  }).done(function (res) {
+    var url = 'http://127.0.0.1:43594/print';
+    var payload = res;
+
+    $.ajax({
+      url: url,
+      dataType: 'json',
+      contentType: 'application/json; charset=utf-8',
+      method: 'POST',
+      data: JSON.stringify(payload),
+    }).done(function (res) {
+      console.log(res);
+    });
+  });
+}
+```
+
+The SDK version uses `fetch` and throws errors when either the backend or local call fails.
 
 ---
 

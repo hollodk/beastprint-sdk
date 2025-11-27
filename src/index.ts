@@ -12,6 +12,9 @@ export type LegacyPrintOptions = {
   popup?: boolean;        // if true, open new window instead of iframe
   popupWidthPx?: number;  // popup window width in pixels
   popupHeightPx?: number; // popup window height in pixels
+
+  // NEW: load URL into a hidden iframe and print, instead of opening popup
+  urlInIframe?: boolean;
 };
 
 export type BeastPrintPrinter = {
@@ -28,12 +31,29 @@ export type BeastPrintOptions = {
   html?: string;   // used when mode === 'html'
 };
 
-export type PrintStrategy = 'auto' | 'legacy' | 'beast';
+export type PrintdeskOptions = {
+  printerId: string;
+  saleId: string;
+  sample: boolean;
+  /**
+   * The URL of your backend that returns the payload for the local printdesk service.
+   * Equivalent to the old `printUrl` in your jQuery example.
+   */
+  printUrl: string;
+  /**
+   * URL of the local printdesk endpoint.
+   * Defaults to 'http://127.0.0.1:43594/print'.
+   */
+  localUrl?: string;
+};
+
+export type PrintStrategy = 'auto' | 'legacy' | 'beast' | 'printdesk';
 
 export type PrintOptions = {
   strategy?: PrintStrategy;
   legacy?: LegacyPrintOptions;
   beast?: BeastPrintOptions;
+  printdesk?: PrintdeskOptions;
 };
 
 export async function print(options: PrintOptions = {}): Promise<void> {
@@ -45,6 +65,10 @@ export async function print(options: PrintOptions = {}): Promise<void> {
 
   if (strategy === 'beast') {
     return beastPrint(options.beast);
+  }
+
+  if (strategy === 'printdesk') {
+    return printdeskPrint(options.printdesk);
   }
 
   // strategy === 'auto'
@@ -158,33 +182,71 @@ async function legacyPrint(options?: LegacyPrintOptions): Promise<void> {
     throw new Error('[beastprint] window.print() is not available');
   }
 
-  // Case: URL printing (popup-based)
+  // Case: URL printing (popup or iframe)
   if (options.url) {
-    if (typeof window === 'undefined') {
-      throw new Error('[beastprint] Cannot open window in non-browser environment');
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+      throw new Error('[beastprint] Cannot open window/iframe in non-browser environment');
     }
 
-    const features = [
-      options.popupWidthPx ? `width=${options.popupWidthPx}` : '',
-      options.popupHeightPx ? `height=${options.popupHeightPx}` : '',
-    ]
-      .filter(Boolean)
-      .join(',');
+    // If popup explicitly requested, use popup-based printing
+    if (options.popup) {
+      const features = [
+        options.popupWidthPx ? `width=${options.popupWidthPx}` : '',
+        options.popupHeightPx ? `height=${options.popupHeightPx}` : '',
+      ]
+        .filter(Boolean)
+        .join(',');
 
-    const win = window.open(options.url, '_blank', features || undefined);
-    if (!win) {
-      throw new Error('[beastprint] Popup blocked or failed to open window');
-    }
-
-    win.addEventListener('load', () => {
-      try {
-        win.focus();
-        win.print();
-      } catch (err) {
-        console.error('[beastprint] Failed to print from opened window', err);
+      const win = window.open(options.url, '_blank', features || undefined);
+      if (!win) {
+        throw new Error('[beastprint] Popup blocked or failed to open window');
       }
-    });
 
+      win.addEventListener('load', () => {
+        try {
+          win.focus();
+          win.print();
+        } catch (err) {
+          console.error('[beastprint] Failed to print from opened window', err);
+        }
+      });
+
+      return;
+    }
+
+    // Load URL into a hidden iframe and print from there
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    iframe.style.visibility = 'hidden';
+
+    document.body.appendChild(iframe);
+
+    iframe.onload = () => {
+      const iframeWindow = iframe.contentWindow;
+      if (!iframeWindow) {
+        iframe.remove();
+        console.error('[beastprint] Failed to access iframe.contentWindow for URL print');
+        return;
+      }
+
+      try {
+        iframeWindow.focus();
+        iframeWindow.print();
+      } catch (err) {
+        console.error('[beastprint] Failed to print from URL iframe', err);
+      } finally {
+        setTimeout(() => {
+          iframe.remove();
+        }, 1000);
+      }
+    };
+
+    iframe.src = options.url;
     return;
   }
 
@@ -269,6 +331,85 @@ async function legacyPrint(options?: LegacyPrintOptions): Promise<void> {
 
     return;
   }
+}
+
+async function printdeskPrint(options?: PrintdeskOptions): Promise<void> {
+  if (!options) {
+    throw new Error('[beastprint] No Printdesk options provided');
+  }
+
+  const { printerId, saleId, sample, printUrl } = options;
+  const localUrl = options.localUrl ?? 'http://127.0.0.1:43594/print';
+
+  if (!printerId) {
+    throw new Error('[beastprint] Printdesk: printerId is required');
+  }
+  if (!saleId) {
+    throw new Error('[beastprint] Printdesk: saleId is required');
+  }
+  if (!printUrl) {
+    throw new Error('[beastprint] Printdesk: printUrl is required');
+  }
+
+  // 1) Call your backend (printUrl) to get the payload
+  const qs = new URLSearchParams({
+    printer: printerId,
+    sale: saleId,
+    sample: String(sample),
+  });
+
+  const backendResponse = await fetch(`${printUrl}?${qs.toString()}`, {
+    method: 'GET',
+  });
+
+  if (!backendResponse.ok) {
+    let text = '';
+    try {
+      text = await backendResponse.text();
+    } catch {
+      // ignore
+    }
+    throw new Error(
+      `[beastprint] Printdesk backend error: ${backendResponse.status}${
+        text ? ` - ${text}` : ''
+      }`
+    );
+  }
+
+  let payload: unknown;
+  try {
+    payload = await backendResponse.json();
+  } catch {
+    throw new Error(
+      '[beastprint] Printdesk: failed to parse backend response as JSON'
+    );
+  }
+
+  // 2) Send payload to local Printdesk service
+  const localResponse = await fetch(localUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!localResponse.ok) {
+    let text = '';
+    try {
+      text = await localResponse.text();
+    } catch {
+      // ignore
+    }
+    throw new Error(
+      `[beastprint] Local Printdesk error: ${localResponse.status}${
+        text ? ` - ${text}` : ''
+      }`
+    );
+  }
+
+  // For now we ignore the local response body and just succeed.
 }
 
 async function beastPrint(options?: BeastPrintOptions): Promise<void> {

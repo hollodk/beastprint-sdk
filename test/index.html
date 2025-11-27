@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>BeastPrint SDK – All Methods Test</title>
+    <!-- Tailwind via CDN (for local testing only) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-slate-100 min-h-screen">
+    <div class="max-w-6xl mx-auto py-10 px-4">
+      <header class="mb-8">
+        <h1 class="text-3xl font-semibold text-slate-800 mb-2">
+          BeastPrint SDK – Test Harness
+        </h1>
+        <p class="text-slate-600">
+          Test all printing methods (Legacy, BeastPrint, Printdesk) from a single page.
+        </p>
+      </header>
+
+      <!-- Top: three wide cards -->
+      <main class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start mb-8">
+        <!-- Legacy printing -->
+        <section class="bg-white shadow-sm border border-slate-200 rounded-xl p-6">
+          <h2 class="text-xl font-semibold text-slate-800 mb-4">Legacy printing</h2>
+          <p class="text-sm text-slate-600 mb-4">
+            Browser-based printing: <code>window.print()</code>, iframe, or popup.
+          </p>
+
+          <div class="space-y-3">
+            <button
+              id="btn-legacy-basic"
+              class="w-full inline-flex items-center justify-center rounded-md bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
+            >
+              Legacy: window.print()
+            </button>
+
+            <button
+              id="btn-legacy-html-iframe"
+              class="w-full inline-flex items-center justify-center rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500"
+            >
+              Legacy: HTML via iframe (80mm, no popup)
+            </button>
+
+            <button
+              id="btn-legacy-html-popup"
+              class="w-full inline-flex items-center justify-center rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600"
+            >
+              Legacy: HTML via popup (400x600)
+            </button>
+
+            <button
+              id="btn-legacy-url-iframe"
+              class="w-full inline-flex items-center justify-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
+            >
+              Legacy: URL via iframe (this page)
+            </button>
+
+            <button
+              id="btn-legacy-url-popup"
+              class="w-full inline-flex items-center justify-center rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-600"
+            >
+              Legacy: URL via popup (this page)
+            </button>
+          </div>
+        </section>
+
+        <!-- BeastPrint printing -->
+        <section class="bg-white shadow-sm border border-slate-200 rounded-xl p-6">
+          <h2 class="text-xl font-semibold text-slate-800 mb-4">BeastPrint API</h2>
+          <p class="text-sm text-slate-600 mb-4">
+            Send print jobs to <code>https://print.beastscan.com/print</code>.
+          </p>
+
+          <div class="space-y-3">
+            <div class="mb-2">
+              <label class="block text-xs font-medium text-slate-600 mb-1">
+                Printer key (replace with a real key)
+              </label>
+              <input
+                id="input-printer-key"
+                type="text"
+                class="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+                value="REPLACE_WITH_REAL_PRINTER_KEY"
+              />
+            </div>
+
+            <div class="mb-4">
+              <label class="block text-xs font-medium text-slate-600 mb-1">
+                Profile key
+              </label>
+              <input
+                id="input-profile-key"
+                type="text"
+                class="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+                value="epson-tm-m30ii"
+              />
+            </div>
+
+            <button
+              id="btn-beast-template"
+              class="w-full inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+            >
+              BeastPrint: template mode
+            </button>
+
+            <button
+              id="btn-beast-html"
+              class="w-full inline-flex items-center justify-center rounded-md bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-600"
+            >
+              BeastPrint: HTML mode
+            </button>
+          </div>
+        </section>
+
+        <!-- Printdesk printing -->
+        <section class="bg-white shadow-sm border border-slate-200 rounded-xl p-6">
+          <h2 class="text-xl font-semibold text-slate-800 mb-4">Printdesk</h2>
+          <p class="text-sm text-slate-600 mb-4">
+            Test the legacy Printdesk-style local printing (backend + local agent).
+          </p>
+
+          <div class="space-y-3">
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">
+                Backend print URL (<code>printUrl</code>)
+              </label>
+              <input
+                id="input-printdesk-printurl"
+                type="text"
+                class="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+                placeholder="https://your-backend.example.com/printdesk"
+              />
+            </div>
+
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">
+                Local URL (<code>localUrl</code>, optional)
+              </label>
+              <input
+                id="input-printdesk-localurl"
+                type="text"
+                class="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+                value="http://127.0.0.1:43594/print"
+              />
+            </div>
+
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">
+                  Printer ID
+                </label>
+                <input
+                  id="input-printdesk-printer"
+                  type="text"
+                  class="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+                  placeholder="PRINTER_123"
+                />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">
+                  Sale ID
+                </label>
+                <input
+                  id="input-printdesk-sale"
+                  type="text"
+                  class="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+                  placeholder="SALE_456"
+                />
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between">
+              <label class="inline-flex items-center gap-2 text-xs text-slate-600">
+                <input
+                  id="input-printdesk-sample"
+                  type="checkbox"
+                  class="rounded border-slate-300"
+                />
+                Sample
+              </label>
+            </div>
+
+            <button
+              id="btn-printdesk"
+              class="w-full inline-flex items-center justify-center rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-500"
+            >
+              Printdesk: run backend + local print
+            </button>
+          </div>
+        </section>
+      </main>
+
+      <!-- Bottom: full-width log -->
+      <section class="bg-slate-900 text-slate-100 rounded-xl p-6">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-xl font-semibold">Log</h2>
+          <button
+            id="btn-clear-log"
+            class="inline-flex items-center justify-center rounded-md bg-slate-700 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-600"
+          >
+            Clear log
+          </button>
+        </div>
+        <pre
+          id="log"
+          class="text-xs font-mono whitespace-pre-wrap break-words bg-slate-950/40 rounded-md p-3 h-80 md:h-96 overflow-auto border border-slate-700"
+        ></pre>
+      </section>
+    </div>
+
+    <script type="module">
+      import { print } from '../dist/index.esm.js';
+
+      const logEl = document.getElementById('log');
+      const printerKeyInput = document.getElementById('input-printer-key');
+      const profileKeyInput = document.getElementById('input-profile-key');
+
+      const printdeskPrintUrlInput = document.getElementById('input-printdesk-printurl');
+      const printdeskLocalUrlInput = document.getElementById('input-printdesk-localurl');
+      const printdeskPrinterInput = document.getElementById('input-printdesk-printer');
+      const printdeskSaleInput = document.getElementById('input-printdesk-sale');
+      const printdeskSampleInput = document.getElementById('input-printdesk-sample');
+
+      const log = (msg) => {
+        const ts = new Date().toISOString();
+        const line = `[${ts}] ${msg}`;
+        console.log(line);
+        if (logEl) {
+          logEl.textContent += line + '\n';
+          logEl.scrollTop = logEl.scrollHeight;
+        }
+      };
+
+      const clearLog = () => {
+        if (logEl) logEl.textContent = '';
+      };
+
+      document.getElementById('btn-clear-log')?.addEventListener('click', clearLog);
+
+      const getPrinterConfig = () => {
+        const key = printerKeyInput?.value?.trim();
+        const profileKey = profileKeyInput?.value?.trim() || undefined;
+        if (!key || key === 'REPLACE_WITH_REAL_PRINTER_KEY') {
+          log('WARN: Please set a real printer key before using BeastPrint.');
+        }
+        return { key, profileKey };
+      };
+
+      // Legacy: window.print()
+      document.getElementById('btn-legacy-basic')?.addEventListener('click', async () => {
+        log('Legacy: window.print()');
+        try {
+          await print({ strategy: 'legacy' });
+          log('Legacy basic: completed');
+        } catch (err) {
+          log('Legacy basic: FAILED: ' + err);
+        }
+      });
+
+      // Legacy: HTML via iframe
+      document
+        .getElementById('btn-legacy-html-iframe')
+        ?.addEventListener('click', async () => {
+          log('Legacy: HTML via iframe');
+          try {
+            await print({
+              strategy: 'legacy',
+              legacy: {
+                html: `
+                  <div>
+                    <h1>Legacy HTML via iframe</h1>
+                    <p>This will be printed through an invisible iframe.</p>
+                    <p>Time: ${new Date().toLocaleString()}</p>
+                  </div>
+                `,
+                pageWidthMm: 80,
+                marginMm: 0,
+                hideAppChrome: true,
+              },
+            });
+            log('Legacy HTML iframe: completed');
+          } catch (err) {
+            log('Legacy HTML iframe: FAILED: ' + err);
+          }
+        });
+
+      // Legacy: HTML via popup
+      document
+        .getElementById('btn-legacy-html-popup')
+        ?.addEventListener('click', async () => {
+          log('Legacy: HTML via popup');
+          try {
+            await print({
+              strategy: 'legacy',
+              legacy: {
+                html: `
+                  <div style="width: 300px; font-family: system-ui, sans-serif;">
+                    <h1>Legacy HTML via popup</h1>
+                    <p>This content is printed from a popup window.</p>
+                    <p>Time: ${new Date().toLocaleString()}</p>
+                  </div>
+                `,
+                popup: true,
+                popupWidthPx: 400,
+                popupHeightPx: 600,
+                pageWidthMm: 80,
+                marginMm: 0,
+                hideAppChrome: true,
+              },
+            });
+            log('Legacy HTML popup: completed');
+          } catch (err) {
+            log('Legacy HTML popup: FAILED: ' + err);
+          }
+        });
+
+      // Legacy: URL via iframe (this page)
+      document
+        .getElementById('btn-legacy-url-iframe')
+        ?.addEventListener('click', async () => {
+          const url = window.location.pathname;
+          log(`Legacy: URL via iframe → ${url}`);
+          try {
+            await print({
+              strategy: 'legacy',
+              legacy: {
+                url,
+                // popup: false → uses iframe by default
+              },
+            });
+            log('Legacy URL iframe: completed');
+          } catch (err) {
+            log('Legacy URL iframe: FAILED: ' + err);
+          }
+        });
+
+      // Legacy: URL via popup (this page)
+      document
+        .getElementById('btn-legacy-url-popup')
+        ?.addEventListener('click', async () => {
+          const url = window.location.pathname;
+          log(`Legacy: URL via popup → ${url}`);
+          try {
+            await print({
+              strategy: 'legacy',
+              legacy: {
+                url,
+                popup: true,
+                popupWidthPx: 400,
+                popupHeightPx: 600,
+              },
+            });
+            log('Legacy URL popup: completed');
+          } catch (err) {
+            log('Legacy URL popup: FAILED: ' + err);
+          }
+        });
+
+      // BeastPrint: template mode
+      document
+        .getElementById('btn-beast-template')
+        ?.addEventListener('click', async () => {
+          const printer = getPrinterConfig();
+          log('BeastPrint: template mode');
+          try {
+            await print({
+              strategy: 'beast',
+              beast: {
+                mode: 'template',
+                templateId: 'default-receipt',
+                widthMm: 80,
+                data: {
+                  store: { name: 'Guestify' },
+                  time: new Date().toISOString(),
+                  orderId: Math.floor(Math.random() * 1_000_000),
+                },
+                printer,
+              },
+            });
+            log('BeastPrint template: completed');
+          } catch (err) {
+            log('BeastPrint template: FAILED: ' + err);
+          }
+        });
+
+      // BeastPrint: HTML mode
+      document
+        .getElementById('btn-beast-html')
+        ?.addEventListener('click', async () => {
+          const printer = getPrinterConfig();
+          log('BeastPrint: HTML mode');
+          try {
+            await print({
+              strategy: 'beast',
+              beast: {
+                mode: 'html',
+                widthMm: 80,
+                html: `
+                  <html>
+                    <body style="font-family: system-ui, sans-serif;">
+                      <h1>BeastPrint HTML mode</h1>
+                      <p>Printed via BeastPrint service.</p>
+                      <p>Time: ${new Date().toLocaleString()}</p>
+                    </body>
+                  </html>
+                `,
+                printer,
+              },
+            });
+            log('BeastPrint HTML: completed');
+          } catch (err) {
+            log('BeastPrint HTML: FAILED: ' + err);
+          }
+        });
+
+      // Printdesk: backend + local agent
+      document
+        .getElementById('btn-printdesk')
+        ?.addEventListener('click', async () => {
+          const printerId = printdeskPrinterInput?.value?.trim() || '';
+          const saleId = printdeskSaleInput?.value?.trim() || '';
+          const printUrl = printdeskPrintUrlInput?.value?.trim() || '';
+          const localUrlRaw = printdeskLocalUrlInput?.value?.trim() || '';
+          const sample = !!printdeskSampleInput?.checked;
+
+          log('Printdesk: starting');
+          if (!printUrl) {
+            log('Printdesk: ERROR – printUrl is required');
+            return;
+          }
+          if (!printerId || !saleId) {
+            log('Printdesk: ERROR – printerId and saleId are required');
+            return;
+          }
+
+          try {
+            await print({
+              strategy: 'printdesk',
+              printdesk: {
+                printerId,
+                saleId,
+                sample,
+                printUrl,
+                localUrl: localUrlRaw || undefined,
+              },
+            });
+            log('Printdesk: completed');
+          } catch (err) {
+            log('Printdesk: FAILED: ' + err);
+          }
+        });
+    </script>
+  </body>
+</html>
