@@ -163,6 +163,24 @@ export async function print(options: PrintOptions = {}): Promise<void> {
       printdeskOpts,
     });
 
+    // If beast has a templateId, we can reuse its rendered HTML for Printdesk/Legacy
+    const beastHasTemplate = !!beastOpts?.templateId;
+
+    let renderedTemplateHtml: string | undefined;
+    const ensureRenderedTemplateHtml = async (): Promise<string | undefined> => {
+      if (!beastHasTemplate) return undefined;
+      if (renderedTemplateHtml != null) return renderedTemplateHtml;
+      renderedTemplateHtml = await renderTemplateToHtml(
+        beastOpts!.templateId!,
+        beastOpts!.widthMm,
+        beastOpts!.data
+      );
+      debugLog('print: rendered template HTML from beast.templateId for reuse', {
+        templateId: beastOpts!.templateId,
+      });
+      return renderedTemplateHtml;
+    };
+
     // Helper to optionally fallback to legacy
     const maybeFallbackToLegacy = async (err: unknown) => {
       if (!fallbackToLegacy || !legacyOpts) {
@@ -184,6 +202,15 @@ export async function print(options: PrintOptions = {}): Promise<void> {
 
     if (strategy === 'legacy') {
       debugLog('strategy=legacy → legacyPrint', { legacyOpts });
+
+      // If legacy has no html but beast has a template, render and reuse it
+      if (legacyOpts && !legacyOpts.html && beastHasTemplate) {
+        const html = await ensureRenderedTemplateHtml();
+        if (html) {
+          legacyOpts.html = html;
+        }
+      }
+
       return legacyPrint(legacyOpts);
     }
 
@@ -199,6 +226,15 @@ export async function print(options: PrintOptions = {}): Promise<void> {
 
     if (strategy === 'printdesk') {
       debugLog('strategy=printdesk → printdeskPrint', { printdeskOpts });
+
+      // If printdesk has no html but beast has a template, render and reuse it
+      if (printdeskOpts && !printdeskOpts.html && beastHasTemplate) {
+        const html = await ensureRenderedTemplateHtml();
+        if (html) {
+          printdeskOpts.html = html;
+        }
+      }
+
       try {
         return await printdeskPrint(printdeskOpts);
       } catch (err) {
@@ -247,6 +283,15 @@ export async function print(options: PrintOptions = {}): Promise<void> {
     if (hasPrintdeskConfig) {
       try {
         debugLog('auto → trying Printdesk next');
+
+        // If printdesk has no html but beast has a template, render and reuse it
+        if (printdeskOpts && !printdeskOpts.html && beastHasTemplate) {
+          const html = await ensureRenderedTemplateHtml();
+          if (html) {
+            printdeskOpts.html = html;
+          }
+        }
+
         await printdeskPrint(printdeskOpts);
         debugLog('auto → Printdesk succeeded');
         return;
@@ -262,6 +307,15 @@ export async function print(options: PrintOptions = {}): Promise<void> {
     // 3) Finally, try Legacy if provided or derived
     if (legacyOpts) {
       debugLog('auto → using legacy fallback (legacy options present)', { legacyOpts });
+
+      // If legacy has no html but beast has a template, render and reuse it
+      if (!legacyOpts.html && beastHasTemplate) {
+        const html = await ensureRenderedTemplateHtml();
+        if (html) {
+          legacyOpts.html = html;
+        }
+      }
+
       return legacyPrint(legacyOpts);
     }
 
@@ -633,6 +687,59 @@ async function printdeskPrint(options?: PrintdeskOptions): Promise<void> {
   }
 
   // For now we ignore the local response body and just succeed.
+}
+
+async function renderTemplateToHtml(
+  templateId: string,
+  widthMm: number | undefined,
+  data: Record<string, any> | undefined
+): Promise<string> {
+  const body = {
+    mode: 'template',
+    templateId,
+    widthMm: widthMm ?? 80,
+    data: data ?? {},
+  };
+
+  debugLog('renderTemplateToHtml: rendering via BeastPrint', body);
+
+  const response = await fetch('https://print.beastscan.com/render/html', {
+    method: 'POST',
+    headers: {
+      accept: 'text/html',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    let text = '';
+    try {
+      text = await response.text();
+    } catch {
+      // ignore
+    }
+    throw new Error(
+      `[beastprint] renderTemplateToHtml error: ${response.status}${
+        text ? ` - ${text}` : ''
+      }`
+    );
+  }
+
+  const html = await response.text();
+  return html;
+}
+
+/**
+ * Public helper: render a BeastPrint template to HTML.
+ * This can be used to feed the resulting HTML into legacy or Printdesk printing.
+ */
+export async function renderTemplateHtml(
+  templateId: string,
+  widthMm?: number,
+  data?: Record<string, any>
+): Promise<string> {
+  return renderTemplateToHtml(templateId, widthMm, data);
 }
 
 async function beastPrint(options?: BeastPrintOptions): Promise<void> {

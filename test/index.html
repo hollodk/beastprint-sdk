@@ -141,6 +141,21 @@
               />
             </div>
 
+            <div class="mb-4">
+              <label class="block text-xs font-medium text-slate-600 mb-1">
+                Template data (JSON)
+              </label>
+              <textarea
+                id="input-template-data"
+                class="w-full rounded-md border border-slate-300 px-2 py-1 text-xs font-mono"
+                rows="4"
+                placeholder='{"store":{"name":"Guestify"}}'
+              ></textarea>
+              <p class="mt-1 text-[11px] text-slate-500">
+                Used as <code>data</code> when rendering templates (BeastPrint and helpers).
+              </p>
+            </div>
+
             <button
               id="btn-beast-template"
               class="w-full inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
@@ -248,6 +263,19 @@
       const printdeskHtmlInput = document.getElementById('input-printdesk-html');
       const printdeskUrlInput = document.getElementById('input-printdesk-url');
       const printdeskLocalUrlInput = document.getElementById('input-printdesk-localurl');
+
+      const templateDataInput = document.getElementById('input-template-data');
+
+      const parseTemplateData = () => {
+        const raw = templateDataInput?.value?.trim();
+        if (!raw) return undefined;
+        try {
+          return JSON.parse(raw);
+        } catch (err) {
+          log('WARN: Failed to parse template data JSON: ' + err);
+          return undefined;
+        }
+      };
 
       const log = (msg) => {
         const ts = new Date().toISOString();
@@ -433,6 +461,11 @@
         .getElementById('btn-beast-template')
         ?.addEventListener('click', async () => {
           const printer = getPrinterConfig();
+          const data = parseTemplateData() ?? {
+            store: { name: 'Guestify' },
+            time: new Date().toISOString(),
+            orderId: Math.floor(Math.random() * 1_000_000),
+          };
           log('BeastPrint: template mode');
           try {
             await print({
@@ -441,11 +474,7 @@
                 mode: 'template',
                 templateId: 'default-receipt',
                 widthMm: 80,
-                data: {
-                  store: { name: 'Guestify' },
-                  time: new Date().toISOString(),
-                  orderId: Math.floor(Math.random() * 1_000_000),
-                },
+                data,
                 printer,
               },
             });
