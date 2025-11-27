@@ -165,8 +165,18 @@
                 id="input-template-data"
                 class="w-full rounded-md border border-slate-300 px-2 py-1 text-xs font-mono"
                 rows="4"
-                placeholder='{"store":{"name":"Guestify"}}'
-              ></textarea>
+              >{
+    "store": {
+        "name": "Meh",
+        "address": "Milk street 4",
+        "phone": "+4580808080"
+    },
+    "order": {
+        "number": 123,
+        "date": "2025-08-12 12:05",
+        "staff": "Hanne"
+    }
+}</textarea>
               <p class="mt-1 text-[11px] text-slate-500">
                 Used as <code>data</code> when rendering templates (BeastPrint and helpers).
               </p>
@@ -266,13 +276,7 @@
                 id="input-printdesk-printeroptions"
                 class="w-full rounded-md border border-slate-300 px-2 py-1 text-xs font-mono"
                 rows="4"
-              >{
-  "group_id": null,
-  "now": null,
-  "wait_for_pull": true,
-  "copies": 1,
-  "monochromeLogo": true
-}</textarea>
+              ></textarea>
               <p class="mt-1 text-[11px] text-slate-500">
                 These override the built‑in printerOptions defaults. Clear to use SDK defaults.
               </p>
@@ -287,10 +291,7 @@
                 class="w-full rounded-md border border-slate-300 px-2 py-1 text-xs font-mono"
                 rows="4"
               >{
-  "name": "EPSON_TM-m30II",
-  "description": "",
-  "id": "648844d6-ac52-448a-8a5d-d03d9511c2be|EPSON_TM-m30II",
-  "status": "active"
+  "name": "EPSON_TM-m30II"
 }</textarea>
               <p class="mt-1 text-[11px] text-slate-500">
                 Optional explicit printer selection for the local agent. Leave empty to let the agent
@@ -402,7 +403,18 @@
         const sharedHtml = autoHtmlInput?.value || '';
         const sharedUrl = autoUrlInput?.value?.trim() || '';
 
+        const pdfOptionsRaw = printdeskPdfOptionsInput?.value || '';
+        const printerOptionsRaw = printdeskPrinterOptionsInput?.value || '';
         const printerRaw = printdeskPrinterInput?.value || '';
+
+        const autoPrintdeskPdfOptions = parseJsonOrUndefined(
+          pdfOptionsRaw,
+          'printdesk.pdfOptions'
+        );
+        const autoPrintdeskPrinterOptions = parseJsonOrUndefined(
+          printerOptionsRaw,
+          'printdesk.printerOptions'
+        );
         const autoPrintdeskPrinter = parseJsonOrUndefined(printerRaw, 'printdesk.printer');
 
         log('Auto: starting with shared html/url');
@@ -420,7 +432,7 @@
 
           await print({
             strategy: 'auto',
-            debug: true, // per-call debug to see full decision flow
+            debug: true,
 
             html: sharedHtml || undefined,
             url: sharedUrl || undefined,
@@ -440,8 +452,10 @@
                   printer: getPrinterConfig(),
                 },
 
-            // Printdesk: rely on shared html/url in auto mode; printer can be configured via the Printdesk section
+            // Printdesk: rely on shared html/url; options configured via the Printdesk section
             printdesk: {
+              pdfOptions: autoPrintdeskPdfOptions,
+              printerOptions: autoPrintdeskPrinterOptions,
               printer: autoPrintdeskPrinter,
             },
 
