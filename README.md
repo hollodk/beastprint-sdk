@@ -146,6 +146,36 @@ export type BeastPrintOptions = {
   url?: string;    // URL to fetch HTML from when mode === 'html'
 };
 
+export type PrintdeskPdfOptions = {
+  margins?: {
+    marginType?: number;
+  };
+  pageSize?: {
+    height?: string;
+    width?: string;
+  };
+  color?: boolean;
+  copies?: number;
+  scaleFactor?: string;
+  landscape?: boolean;
+  dpi?: string;
+};
+
+export type PrintdeskPrinterOptions = {
+  group_id?: string | null;
+  now?: string | null;
+  wait_for_pull?: boolean;
+  copies?: number;
+  monochromeLogo?: boolean;
+};
+
+export type PrintdeskPrinter = {
+  name: string;
+  description?: string;
+  id: string;
+  status?: string;
+};
+
 export type PrintdeskOptions = {
   /**
    * Raw HTML string to send to the local Printdesk service.
@@ -162,6 +192,24 @@ export type PrintdeskOptions = {
    * Defaults to 'http://127.0.0.1:43594/print'.
    */
   localUrl?: string;
+
+  /**
+   * Optional PDF options forwarded to the Printdesk agent.
+   * These override the built‑in defaults on a per-field basis.
+   */
+  pdfOptions?: PrintdeskPdfOptions;
+
+  /**
+   * Optional printer options forwarded to the Printdesk agent.
+   * These override the built‑in defaults on a per-field basis.
+   */
+  printerOptions?: PrintdeskPrinterOptions;
+
+  /**
+   * Optional printer selection for the agent.
+   * If omitted, the agent's own default printer is used.
+   */
+  printer?: PrintdeskPrinter;
 };
 
 export type PrintStrategy = 'auto' | 'legacy' | 'beast' | 'printdesk';
@@ -343,6 +391,67 @@ await print({
     // Or:
     // url: 'https://example.com/printdesk-receipt',
     // localUrl: 'http://127.0.0.1:43594/print', // optional override
+  },
+});
+```
+
+Under the hood, the SDK posts a payload shaped like this to `localUrl`:
+
+```json
+{
+  "payload": {
+    "html": "<html>…</html>",
+    "pdfOptions": {
+      "margins": { "marginType": 0 },
+      "pageSize": { "height": "90000", "width": "90000" },
+      "color": false,
+      "copies": 1,
+      "scaleFactor": "100",
+      "landscape": false,
+      "dpi": "300"
+    },
+    "printerOptions": {
+      "group_id": null,
+      "now": null,
+      "wait_for_pull": true,
+      "copies": 1,
+      "monochromeLogo": true
+    },
+    "printer": {
+      "name": "…",
+      "description": "",
+      "id": "…",
+      "status": "active"
+    }
+  }
+}
+```
+
+- `pdfOptions` and `printerOptions` start with these defaults and can be overridden via
+  `printdesk.pdfOptions` and `printdesk.printerOptions` (field-by-field).
+- `printer` is only included if you pass `printdesk.printer`; otherwise the agent’s default
+  printer is used.
+
+Example with overrides:
+
+```ts
+await print({
+  strategy: 'printdesk',
+  printdesk: {
+    html: '<h1>Printdesk with options</h1>',
+    pdfOptions: {
+      copies: 2,
+      pageSize: { width: '58000' }, // height keeps default "90000"
+    },
+    printerOptions: {
+      wait_for_pull: false,
+    },
+    printer: {
+      name: 'EPSON_TM-m30II',
+      id: '648844d6-ac52-448a-8a5d-d03d9511c2be|EPSON_TM-m30II',
+      status: 'active',
+      description: '',
+    },
   },
 });
 ```

@@ -32,6 +32,36 @@ export type BeastPrintOptions = {
   url?: string;    // URL to fetch HTML from when mode === 'html'
 };
 
+export type PrintdeskPdfOptions = {
+  margins?: {
+    marginType?: number;
+  };
+  pageSize?: {
+    height?: string;
+    width?: string;
+  };
+  color?: boolean;
+  copies?: number;
+  scaleFactor?: string;
+  landscape?: boolean;
+  dpi?: string;
+};
+
+export type PrintdeskPrinterOptions = {
+  group_id?: string | null;
+  now?: string | null;
+  wait_for_pull?: boolean;
+  copies?: number;
+  monochromeLogo?: boolean;
+};
+
+export type PrintdeskPrinter = {
+  name: string;
+  description?: string;
+  id: string;
+  status?: string;
+};
+
 export type PrintdeskOptions = {
   /**
    * Raw HTML string to send to the local Printdesk service.
@@ -48,6 +78,24 @@ export type PrintdeskOptions = {
    * Defaults to 'http://127.0.0.1:43594/print'.
    */
   localUrl?: string;
+
+  /**
+   * Optional PDF options forwarded to the Printdesk agent.
+   * These override the built‑in defaults on a per-field basis.
+   */
+  pdfOptions?: PrintdeskPdfOptions;
+
+  /**
+   * Optional printer options forwarded to the Printdesk agent.
+   * These override the built‑in defaults on a per-field basis.
+   */
+  printerOptions?: PrintdeskPrinterOptions;
+
+  /**
+   * Optional printer selection for the agent.
+   * If omitted, the agent's own default printer is used.
+   */
+  printer?: PrintdeskPrinter;
 };
 
 export type PrintStrategy = 'auto' | 'legacy' | 'beast' | 'printdesk';
@@ -298,29 +346,58 @@ export async function print(options: PrintOptions = {}): Promise<void> {
     const hasPrintdeskConfig =
       !!printdeskOpts &&
       (
+        // Direct Printdesk config
         (typeof printdeskOpts.html === 'string' && printdeskOpts.html.length > 0) ||
-        (typeof printdeskOpts.url === 'string' && printdeskOpts.url.length > 0)
+        (typeof printdeskOpts.url === 'string' && printdeskOpts.url.length > 0) ||
+        // Or anything we can use indirectly (template/global html/url)
+        beastHasTemplate ||
+        (typeof sharedHtml === 'string' && sharedHtml.length > 0) ||
+        (typeof sharedUrl === 'string' && sharedUrl.length > 0)
       );
 
-    debugLog('auto: printdesk configuration check', { hasPrintdeskConfig, printdeskOpts });
+    debugLog('auto: printdesk configuration check', {
+      hasPrintdeskConfig,
+      printdeskOpts,
+      beastHasTemplate,
+      hasSharedHtml: !!sharedHtml,
+      hasSharedUrl: !!sharedUrl,
+    });
 
     if (hasPrintdeskConfig) {
       try {
         debugLog('auto → trying Printdesk next');
 
-        // If printdesk has no html but beast has a template, render and reuse it
-        if (printdeskOpts && !printdeskOpts.html && beastHasTemplate) {
-          const html = await ensureRenderedTemplateHtml();
-          if (html) {
-            debugLog(
-              'auto → Printdesk: injecting rendered Beast template HTML into printdeskOpts.html',
-              { templateId: beastOpts!.templateId }
-            );
-            printdeskOpts.html = html;
-          } else {
-            debugLog(
-              'auto → Printdesk: Beast template detected but ensureRenderedTemplateHtml returned undefined'
-            );
+        if (printdeskOpts) {
+          // Priority for Printdesk (auto):
+          // 1) printdesk.html (already in printdeskOpts.html if caller set it)
+          // 2) printdesk.url (already in printdeskOpts.url if caller set it or from sharedUrl injection above)
+
+          // 3) beast.template → render to HTML if we still have no html
+          if (!printdeskOpts.html && beastHasTemplate) {
+            const html = await ensureRenderedTemplateHtml();
+            if (html) {
+              debugLog(
+                'auto → Printdesk: injecting rendered Beast template HTML into printdeskOpts.html',
+                { templateId: beastOpts!.templateId }
+              );
+              printdeskOpts.html = html;
+            } else {
+              debugLog(
+                'auto → Printdesk: Beast template detected but ensureRenderedTemplateHtml returned undefined'
+              );
+            }
+          }
+
+          // 4) shared/global html if we still have no html
+          if (!printdeskOpts.html && sharedHtml) {
+            debugLog('auto → Printdesk: injecting sharedHtml into printdeskOpts.html');
+            printdeskOpts.html = sharedHtml;
+          }
+
+          // 5) shared/global url if we still have no url
+          if (!printdeskOpts.url && sharedUrl) {
+            debugLog('auto → Printdesk: injecting sharedUrl into printdeskOpts.url');
+            printdeskOpts.url = sharedUrl;
           }
         }
 
@@ -460,6 +537,97 @@ async function legacyPrint(options?: LegacyPrintOptions): Promise<void> {
     throw new Error('[beastprint] window.print() is not available');
   }
 
+  // Case: HTML string printing (preferred if both html and url are set)
+  if (options.html) {
+    debugLog('legacyPrint: HTML mode', {
+      popup: options.popup,
+      pageWidthMm: options.pageWidthMm,
+      pageHeightMm: options.pageHeightMm,
+      marginMm: options.marginMm,
+    });
+
+    if (typeof document === 'undefined') {
+      throw new Error('[beastprint] Cannot create iframe in non-browser environment');
+    }
+
+    const finalHtml = buildLegacyPrintHtml(options.html, options);
+
+    // Popup mode for HTML (legacy-compatible)
+    if (options.popup) {
+      debugLog('legacyPrint: HTML → popup window');
+      const features = [
+        options.popupWidthPx ? `width=${options.popupWidthPx}` : '',
+        options.popupHeightPx ? `height=${options.popupHeightPx}` : '',
+      ]
+        .filter(Boolean)
+        .join(',');
+
+      const win = window.open('', '_blank', features || undefined);
+      if (!win) {
+        throw new Error('[beastprint] Popup blocked or failed to open window');
+      }
+
+      win.document.open();
+      win.document.write(finalHtml);
+      win.document.close();
+
+      win.addEventListener('load', () => {
+        try {
+          win.focus();
+          win.print();
+        } catch (err) {
+          console.error('[beastprint] Failed to print from opened popup', err);
+        } finally {
+          // optional auto-close
+          setTimeout(() => {
+            win.close();
+          }, 1000);
+        }
+      });
+
+      return;
+    }
+
+    // Default: iframe-based printing (no visible popup)
+    debugLog('legacyPrint: HTML → iframe');
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    iframe.style.visibility = 'hidden';
+
+    document.body.appendChild(iframe);
+
+    const iframeWindow = iframe.contentWindow;
+    if (!iframeWindow) {
+      iframe.remove();
+      throw new Error('[beastprint] Failed to access iframe.contentWindow');
+    }
+
+    const doc = iframeWindow.document;
+    doc.open();
+    doc.write(finalHtml);
+    doc.close();
+
+    iframe.onload = () => {
+      try {
+        iframeWindow.focus();
+        iframeWindow.print();
+      } catch (err) {
+        console.error('[beastprint] Failed to print from iframe', err);
+      } finally {
+        setTimeout(() => {
+          iframe.remove();
+        }, 1000);
+      }
+    };
+
+    return;
+  }
+
   // Case: URL printing (popup or iframe)
   if (options.url) {
     debugLog('legacyPrint: URL mode', {
@@ -567,97 +735,6 @@ async function legacyPrint(options?: LegacyPrintOptions): Promise<void> {
     iframe.src = url;
     return;
   }
-
-  // Case: HTML string printing
-  if (options.html) {
-    debugLog('legacyPrint: HTML mode', {
-      popup: options.popup,
-      pageWidthMm: options.pageWidthMm,
-      pageHeightMm: options.pageHeightMm,
-      marginMm: options.marginMm,
-    });
-
-    if (typeof document === 'undefined') {
-      throw new Error('[beastprint] Cannot create iframe in non-browser environment');
-    }
-
-    const finalHtml = buildLegacyPrintHtml(options.html, options);
-
-    // Popup mode for HTML (legacy-compatible)
-    if (options.popup) {
-      debugLog('legacyPrint: HTML → popup window');
-      const features = [
-        options.popupWidthPx ? `width=${options.popupWidthPx}` : '',
-        options.popupHeightPx ? `height=${options.popupHeightPx}` : '',
-      ]
-        .filter(Boolean)
-        .join(',');
-
-      const win = window.open('', '_blank', features || undefined);
-      if (!win) {
-        throw new Error('[beastprint] Popup blocked or failed to open window');
-      }
-
-      win.document.open();
-      win.document.write(finalHtml);
-      win.document.close();
-
-      win.addEventListener('load', () => {
-        try {
-          win.focus();
-          win.print();
-        } catch (err) {
-          console.error('[beastprint] Failed to print from opened popup', err);
-        } finally {
-          // optional auto-close
-          setTimeout(() => {
-            win.close();
-          }, 1000);
-        }
-      });
-
-      return;
-    }
-
-    // Default: iframe-based printing (no visible popup)
-    debugLog('legacyPrint: HTML → iframe');
-    const iframe = document.createElement('iframe');
-    iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
-    iframe.style.border = '0';
-    iframe.style.visibility = 'hidden';
-
-    document.body.appendChild(iframe);
-
-    const iframeWindow = iframe.contentWindow;
-    if (!iframeWindow) {
-      iframe.remove();
-      throw new Error('[beastprint] Failed to access iframe.contentWindow');
-    }
-
-    const doc = iframeWindow.document;
-    doc.open();
-    doc.write(finalHtml);
-    doc.close();
-
-    iframe.onload = () => {
-      try {
-        iframeWindow.focus();
-        iframeWindow.print();
-      } catch (err) {
-        console.error('[beastprint] Failed to print from iframe', err);
-      } finally {
-        setTimeout(() => {
-          iframe.remove();
-        }, 1000);
-      }
-    };
-
-    return;
-  }
 }
 
 async function printdeskPrint(options?: PrintdeskOptions): Promise<void> {
@@ -699,9 +776,56 @@ async function printdeskPrint(options?: PrintdeskOptions): Promise<void> {
     );
   }
 
-  // Send HTML to the local Printdesk endpoint.
-  // If your agent expects a different payload, adjust this object.
-  const payload = { html };
+  // Default pdfOptions & printerOptions; user can override via options.*
+  const defaultPdfOptions: PrintdeskPdfOptions = {
+    margins: { marginType: 0 },
+    pageSize: { height: '90000', width: '90000' },
+    color: false,
+    copies: 1,
+    scaleFactor: '100',
+    landscape: false,
+    dpi: '300',
+  };
+
+  const defaultPrinterOptions: PrintdeskPrinterOptions = {
+    group_id: null,
+    now: null,
+    wait_for_pull: true,
+    copies: 1,
+    monochromeLogo: true,
+  };
+
+  const pdfOptions: PrintdeskPdfOptions = {
+    ...defaultPdfOptions,
+    ...options.pdfOptions,
+    margins: {
+      ...defaultPdfOptions.margins,
+      ...options.pdfOptions?.margins,
+    },
+    pageSize: {
+      ...defaultPdfOptions.pageSize,
+      ...options.pdfOptions?.pageSize,
+    },
+  };
+
+  const printerOptions: PrintdeskPrinterOptions = {
+    ...defaultPrinterOptions,
+    ...options.printerOptions,
+  };
+
+  // If printer is provided, use it; otherwise omit and let agent use its own default.
+  const printer = options.printer;
+
+  // Payload format expected by Printdesk:
+  // { "payload": { html, pdfOptions, printerOptions, printer? } }
+  const payload = {
+    payload: {
+      html,
+      pdfOptions,
+      printerOptions,
+      ...(printer ? { printer } : {}),
+    },
+  };
 
   const localResponse = await fetch(localUrl, {
     method: 'POST',
@@ -839,8 +963,21 @@ async function beastPrint(options?: BeastPrintOptions): Promise<void> {
     return;
   }
 
-  // Otherwise, we honor mode, defaulting to 'template' if unset
-  const mode = options.mode ?? 'template';
+  // Otherwise, pick mode dynamically based on what we have.
+  // Rules:
+  // - If caller explicitly set options.mode, respect it.
+  // - If no mode:
+  //   - If we have html or url → use 'html'
+  //   - Otherwise default to 'template' (and require templateId).
+  let mode = options.mode;
+
+  if (!mode) {
+    if (options.html || options.url) {
+      mode = 'html';
+    } else {
+      mode = 'template';
+    }
+  }
 
   const baseBody: any = {
     mode,
