@@ -143,6 +143,22 @@
 
             <div class="mb-4">
               <label class="block text-xs font-medium text-slate-600 mb-1">
+                Template ID (<code>beast.templateId</code>)
+              </label>
+              <input
+                id="input-template-id"
+                type="text"
+                class="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+                value="default-receipt"
+              />
+              <p class="mt-1 text-[11px] text-slate-500">
+                Used for BeastPrint template mode, and reused by Printdesk/Legacy when they need
+                HTML and have no own <code>html</code>.
+              </p>
+            </div>
+
+            <div class="mb-4">
+              <label class="block text-xs font-medium text-slate-600 mb-1">
                 Template data (JSON)
               </label>
               <textarea
@@ -256,6 +272,7 @@
       const logEl = document.getElementById('log');
       const printerKeyInput = document.getElementById('input-printer-key');
       const profileKeyInput = document.getElementById('input-profile-key');
+      const templateIdInput = document.getElementById('input-template-id');
 
       const autoHtmlInput = document.getElementById('input-auto-html');
       const autoUrlInput = document.getElementById('input-auto-url');
@@ -461,18 +478,19 @@
         .getElementById('btn-beast-template')
         ?.addEventListener('click', async () => {
           const printer = getPrinterConfig();
+          const templateId = templateIdInput?.value?.trim() || 'default-receipt';
           const data = parseTemplateData() ?? {
             store: { name: 'Guestify' },
             time: new Date().toISOString(),
             orderId: Math.floor(Math.random() * 1_000_000),
           };
-          log('BeastPrint: template mode');
+          log(`BeastPrint: template mode (templateId=${templateId})`);
           try {
             await print({
               strategy: 'beast',
               beast: {
                 mode: 'template',
-                templateId: 'default-receipt',
+                templateId,
                 widthMm: 80,
                 data,
                 printer,

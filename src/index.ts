@@ -166,6 +166,14 @@ export async function print(options: PrintOptions = {}): Promise<void> {
     // If beast has a templateId, we can reuse its rendered HTML for Printdesk/Legacy
     const beastHasTemplate = !!beastOpts?.templateId;
 
+    if (beastHasTemplate) {
+      debugLog('print: beast.templateId detected', {
+        templateId: beastOpts!.templateId,
+        widthMm: beastOpts!.widthMm,
+        hasData: !!beastOpts!.data,
+      });
+    }
+
     let renderedTemplateHtml: string | undefined;
     const ensureRenderedTemplateHtml = async (): Promise<string | undefined> => {
       if (!beastHasTemplate) return undefined;
@@ -207,7 +215,15 @@ export async function print(options: PrintOptions = {}): Promise<void> {
       if (legacyOpts && !legacyOpts.html && beastHasTemplate) {
         const html = await ensureRenderedTemplateHtml();
         if (html) {
+          debugLog(
+            'strategy=legacy: injecting rendered Beast template HTML into legacyOpts.html',
+            { templateId: beastOpts!.templateId }
+          );
           legacyOpts.html = html;
+        } else {
+          debugLog(
+            'strategy=legacy: Beast template detected but ensureRenderedTemplateHtml returned undefined'
+          );
         }
       }
 
@@ -231,7 +247,15 @@ export async function print(options: PrintOptions = {}): Promise<void> {
       if (printdeskOpts && !printdeskOpts.html && beastHasTemplate) {
         const html = await ensureRenderedTemplateHtml();
         if (html) {
+          debugLog(
+            'strategy=printdesk: injecting rendered Beast template HTML into printdeskOpts.html',
+            { templateId: beastOpts!.templateId }
+          );
           printdeskOpts.html = html;
+        } else {
+          debugLog(
+            'strategy=printdesk: Beast template detected but ensureRenderedTemplateHtml returned undefined'
+          );
         }
       }
 
@@ -288,7 +312,15 @@ export async function print(options: PrintOptions = {}): Promise<void> {
         if (printdeskOpts && !printdeskOpts.html && beastHasTemplate) {
           const html = await ensureRenderedTemplateHtml();
           if (html) {
+            debugLog(
+              'auto → Printdesk: injecting rendered Beast template HTML into printdeskOpts.html',
+              { templateId: beastOpts!.templateId }
+            );
             printdeskOpts.html = html;
+          } else {
+            debugLog(
+              'auto → Printdesk: Beast template detected but ensureRenderedTemplateHtml returned undefined'
+            );
           }
         }
 
@@ -312,7 +344,15 @@ export async function print(options: PrintOptions = {}): Promise<void> {
       if (!legacyOpts.html && beastHasTemplate) {
         const html = await ensureRenderedTemplateHtml();
         if (html) {
+          debugLog(
+            'auto → Legacy: injecting rendered Beast template HTML into legacyOpts.html',
+            { templateId: beastOpts!.templateId }
+          );
           legacyOpts.html = html;
+        } else {
+          debugLog(
+            'auto → Legacy: Beast template detected but ensureRenderedTemplateHtml returned undefined'
+          );
         }
       }
 
@@ -753,6 +793,14 @@ async function beastPrint(options?: BeastPrintOptions): Promise<void> {
     throw new Error('[beastprint] printer.key is required for BeastPrint');
   }
 
+  debugLog('beastPrint: effective mode and config', {
+    hasTemplateId: !!options.templateId,
+    mode: options.mode ?? 'template',
+    hasHtml: !!options.html,
+    hasUrl: !!options.url,
+    hasData: !!options.data,
+  });
+
   // If templateId is set, template mode wins over everything else
   // Regardless of options.mode, we treat this as template print.
   if (options.templateId) {
@@ -766,6 +814,8 @@ async function beastPrint(options?: BeastPrintOptions): Promise<void> {
         profileKey: options.printer.profileKey,
       },
     };
+
+    debugLog('beastPrint: sending template print', body);
 
     const response = await fetch('https://print.beastscan.com/print', {
       method: 'POST',
@@ -843,6 +893,11 @@ async function beastPrint(options?: BeastPrintOptions): Promise<void> {
       // API expects the HTML payload in `content`, not `html`
       content: html,
     };
+
+    debugLog('beastPrint: sending HTML print', {
+      ...baseBody,
+      contentPreview: typeof html === 'string' ? html.slice(0, 200) : undefined,
+    });
 
     const response = await fetch('https://print.beastscan.com/print', {
       method: 'POST',
