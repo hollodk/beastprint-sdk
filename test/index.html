@@ -332,6 +332,11 @@
         }
 
         try {
+          const templateIdRaw = templateIdInput?.value?.trim();
+          const templateId =
+            templateIdRaw && templateIdRaw.length > 0 ? templateIdRaw : undefined;
+          const data = parseTemplateData() ?? undefined;
+
           await print({
             strategy: 'auto',
             debug: true, // per-call debug to see full decision flow
@@ -339,16 +344,23 @@
             html: sharedHtml || undefined,
             url: sharedUrl || undefined,
 
-            // Beast: HTML mode by default; will use shared html/url if needed
-            beast: {
-              mode: 'html',
-              widthMm: 80,
-              printer: getPrinterConfig(),
-            },
+            // Beast: use template mode if templateId is provided; otherwise HTML mode
+            beast: templateId
+              ? {
+                  mode: 'template',
+                  templateId,
+                  widthMm: 80,
+                  data,
+                  printer: getPrinterConfig(),
+                }
+              : {
+                  mode: 'html',
+                  widthMm: 80,
+                  printer: getPrinterConfig(),
+                },
 
-            // Printdesk:
-            printdesk: {
-            },
+            // Printdesk: rely entirely on shared html/url in auto mode
+            printdesk: {},
 
             // Legacy: minimal config, html/url will be taken from shared fields
             legacy: {
