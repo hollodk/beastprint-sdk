@@ -154,10 +154,28 @@ export type PrintOptions = {
   beast?: BeastPrintOptions;
   printdesk?: PrintdeskOptions;
   /**
+   * Top-level HTML payload that can be reused by multiple strategies.
+   * For example:
+   * - used as legacy.html if legacy.html is not provided
+   * - used as beast.html when beast.mode === 'html' and beast.html is not provided
+   */
+  html?: string;
+  /**
+   * Top-level URL payload that can be reused by multiple strategies.
+   * For example, used as legacy.url if legacy.url is not provided.
+   */
+  url?: string;
+  /**
    * Enable debug logging only for this call.
    * Overrides the global configureDebug() setting for this invocation.
    */
   debug?: boolean;
+  /**
+   * If true, non-legacy strategies (beast, printdesk, auto) will fall back
+   * to legacy printing (when legacy options are provided) instead of throwing.
+   * (Explicit 'legacy' strategy is never affected.)
+   */
+  fallbackToLegacyOnError?: boolean;
 };
 ```
 
@@ -178,8 +196,10 @@ await print({
 - `strategy: 'printdesk'`
   Always use the Printdesk local service integration.
 - `strategy: 'auto'` (default)
-  - If valid BeastPrint configuration is present, try BeastPrint first.
-  - If BeastPrint fails or config is missing, fall back to legacy printing.
+  - If valid BeastPrint configuration is present (printer.key set), try BeastPrint first.
+  - If BeastPrint is not configured or fails, and valid Printdesk configuration is present (printerId, saleId, printUrl), try Printdesk next.
+  - If both BeastPrint and Printdesk are not usable or fail, and legacy options (or shared `html`/`url`) are provided, use legacy printing.
+  - If none of the three have usable configuration, throw an error.
 
 ---
 
@@ -529,6 +549,45 @@ await print({
   },
 });
 ```
+
+### 4. Using shared HTML with smart `auto` (Beast → Printdesk → Legacy)
+
+```ts
+const html = renderLegacyReceipt(order);
+
+await print({
+  strategy: 'auto',
+  html, // shared across strategies
+
+  // Prefer BeastPrint in HTML mode, using the shared HTML
+  beast: {
+    mode: 'html',
+    widthMm: 80,
+    printer: {
+      key: 'YOUR_BEAST_KEY',
+      profileKey: 'epson-tm-m30ii',
+    },
+  },
+
+  // If BeastPrint is not available or fails, try Printdesk
+  printdesk: {
+    printerId: 'PRINTER_123',
+    saleId: 'SALE_456',
+    sample: false,
+    printUrl: 'https://your-backend.example.com/printdesk',
+  },
+
+  // Finally, fall back to legacy using the same HTML
+  legacy: {
+    pageWidthMm: 80,
+    marginMm: 0,
+    hideAppChrome: true,
+    // html will be filled from the top-level html if not set here
+  },
+});
+```
+
+With `configureDebug({ enabled: true })` or `debug: true` on the call, the console will show which of BeastPrint, Printdesk, and Legacy were tried and which one actually handled the job.
 
 ---
 

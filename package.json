@@ -1,6 +1,6 @@
 {
   "name": "beastprint-sdk",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Unified legacy browser printing and BeastPrint cloud printing.",
   "type": "module",
   "main": "dist/index.cjs",

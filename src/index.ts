@@ -55,10 +55,28 @@ export type PrintOptions = {
   beast?: BeastPrintOptions;
   printdesk?: PrintdeskOptions;
   /**
+   * Top-level HTML payload that can be reused by multiple strategies.
+   * For example:
+   * - used as legacy.html if legacy.html is not provided
+   * - used as beast.html when beast.mode === 'html' and beast.html is not provided
+   */
+  html?: string;
+  /**
+   * Top-level URL payload that can be reused by multiple strategies.
+   * For example, used as legacy.url if legacy.url is not provided.
+   */
+  url?: string;
+  /**
    * Enable debug logging only for this call.
    * Overrides the global configureDebug() setting for this invocation.
    */
   debug?: boolean;
+  /**
+   * If true, non-legacy strategies (beast, printdesk, auto) will fall back to
+   * legacy printing instead of throwing, when possible.
+   * (Explicit 'legacy' strategy is never affected.)
+   */
+  fallbackToLegacyOnError?: boolean;
 };
 
 type DebugConfig = {
@@ -89,51 +107,159 @@ export async function print(options: PrintOptions = {}): Promise<void> {
 
   try {
     const strategy: PrintStrategy = options.strategy ?? 'auto';
-    debugLog('print called', { strategy, options });
+    const fallbackToLegacy = options.fallbackToLegacyOnError === true;
+
+    const sharedHtml = options.html;
+    const sharedUrl = options.url;
+
+    // Normalize legacy options and inject shared html/url if needed
+    const legacyOpts: LegacyPrintOptions | undefined = options.legacy
+      ? { ...options.legacy }
+      : sharedHtml || sharedUrl
+      ? { html: sharedHtml, url: sharedUrl }
+      : undefined;
+
+    if (legacyOpts && sharedHtml && !legacyOpts.html) {
+      legacyOpts.html = sharedHtml;
+    }
+    if (legacyOpts && sharedUrl && !legacyOpts.url) {
+      legacyOpts.url = sharedUrl;
+    }
+
+    // Normalize beast options and inject shared html if needed
+    const beastOpts: BeastPrintOptions | undefined = options.beast
+      ? { ...options.beast }
+      : sharedHtml
+      ? { mode: 'html', html: sharedHtml }
+      : undefined;
+
+    if (beastOpts && sharedHtml && beastOpts.mode === 'html' && !beastOpts.html) {
+      beastOpts.html = sharedHtml;
+    }
+
+    const printdeskOpts: PrintdeskOptions | undefined = options.printdesk
+      ? { ...options.printdesk }
+      : undefined;
+
+    debugLog('print called', {
+      strategy,
+      fallbackToLegacy,
+      sharedHtml: !!sharedHtml,
+      sharedUrl: !!sharedUrl,
+      legacyOpts,
+      beastOpts,
+      printdeskOpts,
+    });
+
+    // Helper to optionally fallback to legacy
+    const maybeFallbackToLegacy = async (err: unknown) => {
+      if (!fallbackToLegacy || !legacyOpts) {
+        debugLog(
+          'no legacy fallback configured or no legacy options; rethrowing error from strategy',
+          err
+        );
+        throw err;
+      }
+      console.warn(
+        '[beastprint] Strategy failed, falling back to legacy due to fallbackToLegacyOnError=true',
+        err
+      );
+      debugLog('falling back to legacyPrint because fallbackToLegacyOnError=true', err);
+      return legacyPrint(legacyOpts);
+    };
+
+    // Explicit strategies
 
     if (strategy === 'legacy') {
-      debugLog('strategy=legacy → legacyPrint');
-      return legacyPrint(options.legacy);
+      debugLog('strategy=legacy → legacyPrint', { legacyOpts });
+      return legacyPrint(legacyOpts);
     }
 
     if (strategy === 'beast') {
-      debugLog('strategy=beast → beastPrint');
-      return beastPrint(options.beast);
+      debugLog('strategy=beast → beastPrint', { beastOpts });
+      try {
+        return await beastPrint(beastOpts);
+      } catch (err) {
+        debugLog('beastPrint threw error (explicit strategy)', err);
+        return maybeFallbackToLegacy(err);
+      }
     }
 
     if (strategy === 'printdesk') {
-      debugLog('strategy=printdesk → printdeskPrint');
-      return printdeskPrint(options.printdesk);
+      debugLog('strategy=printdesk → printdeskPrint', { printdeskOpts });
+      try {
+        return await printdeskPrint(printdeskOpts);
+      } catch (err) {
+        debugLog('printdeskPrint threw error (explicit strategy)', err);
+        return maybeFallbackToLegacy(err);
+      }
     }
 
-    // strategy === 'auto'
-    const hasBeastConfig =
-      !!options.beast &&
-      !!options.beast.printer &&
-      typeof options.beast.printer.key === 'string' &&
-      options.beast.printer.key.length > 0;
+    // Smart auto: Beast → Printdesk → Legacy
+    debugLog('strategy=auto starting');
 
-    debugLog('strategy=auto', { hasBeastConfig });
+    // 1) Try BeastPrint if minimally configured
+    const hasBeastConfig =
+      !!beastOpts &&
+      !!beastOpts.printer &&
+      typeof beastOpts.printer.key === 'string' &&
+      beastOpts.printer.key.length > 0;
+
+    debugLog('auto: beast configuration check', { hasBeastConfig, beastOpts });
 
     if (hasBeastConfig) {
       try {
         debugLog('auto → trying BeastPrint first');
-        await beastPrint(options.beast);
+        await beastPrint(beastOpts);
+        debugLog('auto → BeastPrint succeeded');
         return;
       } catch (err) {
-        // Soft failure, then fallback
-        console.warn('[beastprint] BeastPrint failed, falling back to legacy', err);
-        debugLog('auto → BeastPrint failed, will try legacy', err);
+        console.warn('[beastprint] auto: BeastPrint failed, will try next strategy', err);
+        debugLog('auto → BeastPrint failed', err);
+        // continue to Printdesk
       }
+    } else {
+      debugLog('auto → BeastPrint skipped (missing or incomplete beast options)');
     }
 
-    if (options.legacy) {
-      debugLog('auto → legacy fallback');
-      return legacyPrint(options.legacy);
+    // 2) Try Printdesk if minimally configured
+    const hasPrintdeskConfig =
+      !!printdeskOpts &&
+      typeof printdeskOpts.printerId === 'string' &&
+      printdeskOpts.printerId.length > 0 &&
+      typeof printdeskOpts.saleId === 'string' &&
+      printdeskOpts.saleId.length > 0 &&
+      typeof printdeskOpts.printUrl === 'string' &&
+      printdeskOpts.printUrl.length > 0;
+
+    debugLog('auto: printdesk configuration check', { hasPrintdeskConfig, printdeskOpts });
+
+    if (hasPrintdeskConfig) {
+      try {
+        debugLog('auto → trying Printdesk next');
+        await printdeskPrint(printdeskOpts);
+        debugLog('auto → Printdesk succeeded');
+        return;
+      } catch (err) {
+        console.warn('[beastprint] auto: Printdesk failed, will try legacy if available', err);
+        debugLog('auto → Printdesk failed', err);
+        // fall through to legacy
+      }
+    } else {
+      debugLog('auto → Printdesk skipped (missing or incomplete printdesk options)');
     }
 
-    debugLog('auto → no valid config, throwing');
-    throw new Error('[beastprint] No valid print configuration provided');
+    // 3) Finally, try Legacy if provided or derived
+    if (legacyOpts) {
+      debugLog('auto → using legacy fallback (legacy options present)', { legacyOpts });
+      return legacyPrint(legacyOpts);
+    }
+
+    // 4) Nothing usable
+    debugLog('auto → no usable configuration found (no beast/printdesk/legacy)');
+    throw new Error(
+      '[beastprint] auto strategy: no usable configuration for beast, printdesk, or legacy'
+    );
   } finally {
     // Restore previous debug config after this call
     _debugConfig = prevDebugConfig;
