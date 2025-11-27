@@ -700,7 +700,8 @@ async function beastPrint(options?: BeastPrintOptions): Promise<void> {
 
     const body = {
       ...baseBody,
-      html,
+      // API expects the HTML payload in `content`, not `html`
+      content: html,
     };
 
     const response = await fetch('https://print.beastscan.com/print', {
