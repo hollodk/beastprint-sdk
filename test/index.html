@@ -209,7 +209,9 @@
     </div>
 
     <script type="module">
-      import { print } from '../dist/index.esm.js';
+      import { print, configureDebug } from '../dist/index.esm.js';
+
+      configureDebug({ enabled: true });
 
       const logEl = document.getElementById('log');
       const printerKeyInput = document.getElementById('input-printer-key');

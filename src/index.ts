@@ -54,45 +54,90 @@ export type PrintOptions = {
   legacy?: LegacyPrintOptions;
   beast?: BeastPrintOptions;
   printdesk?: PrintdeskOptions;
+  /**
+   * Enable debug logging only for this call.
+   * Overrides the global configureDebug() setting for this invocation.
+   */
+  debug?: boolean;
 };
 
+type DebugConfig = {
+  enabled?: boolean;
+};
+
+let _debugConfig: DebugConfig = {
+  enabled: false,
+};
+
+export function configureDebug(debug: DebugConfig) {
+  _debugConfig = { ..._debugConfig, ...debug };
+}
+
+function debugLog(...args: any[]) {
+  if (!_debugConfig.enabled) return;
+  // namespaced log
+  console.log('[beastprint:debug]', ...args);
+}
+
 export async function print(options: PrintOptions = {}): Promise<void> {
-  const strategy: PrintStrategy = options.strategy ?? 'auto';
+  const prevDebugConfig = _debugConfig;
 
-  if (strategy === 'legacy') {
-    return legacyPrint(options.legacy);
+  // Per-call debug override, if provided
+  if (typeof options.debug === 'boolean') {
+    _debugConfig = { ..._debugConfig, enabled: options.debug };
   }
 
-  if (strategy === 'beast') {
-    return beastPrint(options.beast);
-  }
+  try {
+    const strategy: PrintStrategy = options.strategy ?? 'auto';
+    debugLog('print called', { strategy, options });
 
-  if (strategy === 'printdesk') {
-    return printdeskPrint(options.printdesk);
-  }
-
-  // strategy === 'auto'
-  const hasBeastConfig =
-    !!options.beast &&
-    !!options.beast.printer &&
-    typeof options.beast.printer.key === 'string' &&
-    options.beast.printer.key.length > 0;
-
-  if (hasBeastConfig) {
-    try {
-      await beastPrint(options.beast);
-      return;
-    } catch (err) {
-      // Soft failure, then fallback
-      console.warn('[beastprint] BeastPrint failed, falling back to legacy', err);
+    if (strategy === 'legacy') {
+      debugLog('strategy=legacy → legacyPrint');
+      return legacyPrint(options.legacy);
     }
-  }
 
-  if (options.legacy) {
-    return legacyPrint(options.legacy);
-  }
+    if (strategy === 'beast') {
+      debugLog('strategy=beast → beastPrint');
+      return beastPrint(options.beast);
+    }
 
-  throw new Error('[beastprint] No valid print configuration provided');
+    if (strategy === 'printdesk') {
+      debugLog('strategy=printdesk → printdeskPrint');
+      return printdeskPrint(options.printdesk);
+    }
+
+    // strategy === 'auto'
+    const hasBeastConfig =
+      !!options.beast &&
+      !!options.beast.printer &&
+      typeof options.beast.printer.key === 'string' &&
+      options.beast.printer.key.length > 0;
+
+    debugLog('strategy=auto', { hasBeastConfig });
+
+    if (hasBeastConfig) {
+      try {
+        debugLog('auto → trying BeastPrint first');
+        await beastPrint(options.beast);
+        return;
+      } catch (err) {
+        // Soft failure, then fallback
+        console.warn('[beastprint] BeastPrint failed, falling back to legacy', err);
+        debugLog('auto → BeastPrint failed, will try legacy', err);
+      }
+    }
+
+    if (options.legacy) {
+      debugLog('auto → legacy fallback');
+      return legacyPrint(options.legacy);
+    }
+
+    debugLog('auto → no valid config, throwing');
+    throw new Error('[beastprint] No valid print configuration provided');
+  } finally {
+    // Restore previous debug config after this call
+    _debugConfig = prevDebugConfig;
+  }
 }
 
 function buildLegacyPrintHtml(html: string, options?: LegacyPrintOptions): string {
@@ -173,8 +218,11 @@ function buildLegacyPrintHtml(html: string, options?: LegacyPrintOptions): strin
 }
 
 async function legacyPrint(options?: LegacyPrintOptions): Promise<void> {
+  debugLog('legacyPrint called', options);
+
   // If nothing is specified, just call browser print
   if (!options || (!options.html && !options.url)) {
+    debugLog('legacyPrint: no options, using window.print()');
     if (typeof window !== 'undefined' && typeof window.print === 'function') {
       window.print();
       return;
@@ -184,12 +232,18 @@ async function legacyPrint(options?: LegacyPrintOptions): Promise<void> {
 
   // Case: URL printing (popup or iframe)
   if (options.url) {
+    debugLog('legacyPrint: URL mode', {
+      url: options.url,
+      popup: options.popup,
+    });
+
     if (typeof window === 'undefined' || typeof document === 'undefined') {
       throw new Error('[beastprint] Cannot open window/iframe in non-browser environment');
     }
 
     // If popup explicitly requested, use popup-based printing
     if (options.popup) {
+      debugLog('legacyPrint: URL → popup window');
       const features = [
         options.popupWidthPx ? `width=${options.popupWidthPx}` : '',
         options.popupHeightPx ? `height=${options.popupHeightPx}` : '',
@@ -214,6 +268,7 @@ async function legacyPrint(options?: LegacyPrintOptions): Promise<void> {
       return;
     }
 
+    debugLog('legacyPrint: URL → hidden iframe');
     // Load URL into a hidden iframe and print from there
     const iframe = document.createElement('iframe');
     iframe.style.position = 'fixed';
@@ -252,6 +307,13 @@ async function legacyPrint(options?: LegacyPrintOptions): Promise<void> {
 
   // Case: HTML string printing
   if (options.html) {
+    debugLog('legacyPrint: HTML mode', {
+      popup: options.popup,
+      pageWidthMm: options.pageWidthMm,
+      pageHeightMm: options.pageHeightMm,
+      marginMm: options.marginMm,
+    });
+
     if (typeof document === 'undefined') {
       throw new Error('[beastprint] Cannot create iframe in non-browser environment');
     }
@@ -260,6 +322,7 @@ async function legacyPrint(options?: LegacyPrintOptions): Promise<void> {
 
     // Popup mode for HTML (legacy-compatible)
     if (options.popup) {
+      debugLog('legacyPrint: HTML → popup window');
       const features = [
         options.popupWidthPx ? `width=${options.popupWidthPx}` : '',
         options.popupHeightPx ? `height=${options.popupHeightPx}` : '',
@@ -294,6 +357,7 @@ async function legacyPrint(options?: LegacyPrintOptions): Promise<void> {
     }
 
     // Default: iframe-based printing (no visible popup)
+    debugLog('legacyPrint: HTML → iframe');
     const iframe = document.createElement('iframe');
     iframe.style.position = 'fixed';
     iframe.style.right = '0';
@@ -334,6 +398,8 @@ async function legacyPrint(options?: LegacyPrintOptions): Promise<void> {
 }
 
 async function printdeskPrint(options?: PrintdeskOptions): Promise<void> {
+  debugLog('printdeskPrint called', options);
+
   if (!options) {
     throw new Error('[beastprint] No Printdesk options provided');
   }
@@ -413,6 +479,8 @@ async function printdeskPrint(options?: PrintdeskOptions): Promise<void> {
 }
 
 async function beastPrint(options?: BeastPrintOptions): Promise<void> {
+  debugLog('beastPrint called', options);
+
   if (!options) {
     throw new Error('[beastprint] No BeastPrint options provided');
   }

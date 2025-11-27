@@ -153,6 +153,11 @@ export type PrintOptions = {
   legacy?: LegacyPrintOptions;
   beast?: BeastPrintOptions;
   printdesk?: PrintdeskOptions;
+  /**
+   * Enable debug logging only for this call.
+   * Overrides the global configureDebug() setting for this invocation.
+   */
+  debug?: boolean;
 };
 ```
 
@@ -166,15 +171,58 @@ await print({
 });
 ```
 
-- `strategy: 'legacy'`  
+- `strategy: 'legacy'`
   Always use the legacy browser-based print behavior.
-- `strategy: 'beast'`  
+- `strategy: 'beast'`
   Always use the BeastPrint cloud endpoint.
-- `strategy: 'printdesk'`  
+- `strategy: 'printdesk'`
   Always use the Printdesk local service integration.
-- `strategy: 'auto'` (default)  
+- `strategy: 'auto'` (default)
   - If valid BeastPrint configuration is present, try BeastPrint first.
   - If BeastPrint fails or config is missing, fall back to legacy printing.
+
+---
+
+### Debug mode
+
+For troubleshooting, you can enable a simple debug mode that logs internal decisions to the console.
+
+```ts
+import { print, configureDebug } from 'beastprint-sdk';
+
+configureDebug({ enabled: true });
+
+await print({
+  strategy: 'legacy',
+  legacy: {
+    url: '/receipt/123',
+  },
+});
+
+You can also enable debug only for a single call, without changing the global setting:
+
+```ts
+await print({
+  strategy: 'legacy',
+  debug: true,
+  legacy: {
+    url: '/receipt/123',
+  },
+});
+```
+```
+
+When enabled, debug logs look like:
+
+```text
+[beastprint:debug] print called { strategy: 'legacy', options: { ... } }
+[beastprint:debug] strategy=legacy → legacyPrint
+[beastprint:debug] legacyPrint called { url: '/receipt/123', popup: undefined, ... }
+[beastprint:debug] legacyPrint: URL mode { url: '/receipt/123', popup: undefined }
+[beastprint:debug] legacyPrint: URL → hidden iframe
+```
+
+This is especially useful to verify whether `popup` is being set, which path is used (popup vs iframe), and how `auto` routing behaves.
 
 ---
 
