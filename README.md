@@ -1,11 +1,19 @@
 # beastprint-sdk
 
-Unified web printing for legacy browser printing and the BeastPrint cloud service.
+Unified web printing for:
+
+- **Legacy** browser printing (window.print, iframe, popup)
+- **BeastPrint** cloud printing (template or HTML)
+- **Printdesk**-style local printing (HTML to a local agent)
+
+You can:
 
 - Use it from **npm** in bundlers (Vite, Webpack, etc.)
 - Use it via **CDN** as an ES module
 - Use it as a **global** `window.beastprint.print` in plain `<script>` pages
-- Smoothly **migrate** from “Ctrl+P / HTML templates” to BeastPrint’s cloud printing
+- Use a smart `auto` strategy to try **BeastPrint → Printdesk → Legacy** in order.
+
+---
 
 ## Installation
 
@@ -16,6 +24,8 @@ yarn add beastprint-sdk
 # or
 pnpm add beastprint-sdk
 ```
+
+---
 
 ## Basic usage
 
@@ -92,7 +102,11 @@ After you host/publish `dist/beastprint.global.global.js` somewhere (or from you
 
 ### `print(options?: PrintOptions): Promise<void>`
 
-Top-level function that routes print jobs to either the **legacy** browser print path or **BeastPrint** cloud API, with an optional `auto` strategy.
+Top-level function that routes print jobs to:
+
+- **Legacy** browser printing
+- **BeastPrint** cloud API
+- **Printdesk** local agent
 
 #### Types
 
@@ -144,7 +158,8 @@ export type PrintdeskOptions = {
    */
   url?: string;
   /**
-   * Local Printdesk endpoint, defaults to 'http://127.0.0.1:43594/print'.
+   * URL of the local Printdesk endpoint.
+   * Defaults to 'http://127.0.0.1:43594/print'.
    */
   localUrl?: string;
 };
@@ -182,67 +197,82 @@ export type PrintOptions = {
 };
 ```
 
-#### Strategy routing
+---
 
-```ts
-await print({
-  strategy: 'legacy', // or 'beast' | 'auto'
-  legacy: { /* ... */ },
-  beast: { /* ... */ },
-});
+### How `strategy: 'auto'` works (simple explanation)
+
+`auto` is the default strategy. It tries to be as smart and migration-friendly as possible:
+
+> **Beast → Printdesk → Legacy**, in that order.
+
+Given one call to `print(options)`:
+
+1. **BeastPrint (cloud)**
+
+   - Considered “configured” if `beast.printer.key` is a non-empty string.
+   - If `beast.templateId` is set:
+     - Sends a **template** job:
+       ```json
+       { "mode": "template", "templateId": "...", "data": { ... }, "printer": { ... } }
+       ```
+   - Else if `beast.mode === 'html'`:
+     - Uses:
+       - `beast.html`, or
+       - `beast.url` → fetched as HTML, or
+       - shared `options.html`, or
+       - shared `options.url` → injected as `beast.url` and fetched as HTML.
+     - Sends a **HTML** job:
+       ```json
+       { "mode": "html", "content": "<!doctype html>..." }
+       ```
+
+   - If Beast is not configured or its request fails, `auto` logs the error and moves on.
+
+2. **Printdesk (local)**
+
+   - Considered “configured” if **either**:
+     - `printdesk.html` is a non-empty string, or
+     - `printdesk.url` is a non-empty string (or shared `options.url` injected).
+   - Priority:
+     1. If `printdesk.html` is set → send that to `printdesk.localUrl` (default `http://127.0.0.1:43594/print`).
+     2. Else if `printdesk.url` is set → fetch that URL as HTML and send the result.
+
+   - If Beast also has a `beast.templateId` and Printdesk has no HTML of its own:
+     - The SDK renders the template to HTML via:
+       ```http
+       POST https://print.beastscan.com/render/html
+       ```
+     - Then uses that HTML as `printdesk.html` and sends it to the local agent.
+
+   - If Printdesk is not configured or its request fails, `auto` logs the error and moves on.
+
+3. **Legacy (browser)**
+
+   - Considered usable if:
+     - `legacy` options are present, or
+     - shared `options.html` / `options.url` is present.
+   - Priority:
+     1. If `legacy.html` or shared `html` is present → print that via iframe or popup.
+     2. Else if `legacy.url` or shared `url` is present:
+        - If same-origin and no `popup` → load in hidden iframe and call `print()`.
+        - If cross-origin and no `popup` → open in a new tab and log a warning (user must print manually).
+        - If `popup: true` → open popup and call `print()`.
+
+   - If Beast has a `templateId` and Legacy has no `html`/`url`, the SDK again renders the template to HTML and uses that as `legacy.html`.
+
+4. **If none are usable** (no Beast, no Printdesk, no Legacy config), `auto` throws:
+
+```text
+[beastprint] auto strategy: no usable configuration for beast, printdesk, or legacy
 ```
 
-- `strategy: 'legacy'`
-  Always use the legacy browser-based print behavior.
-- `strategy: 'beast'`
-  Always use the BeastPrint cloud endpoint.
-- `strategy: 'printdesk'`
-  Always use the Printdesk local service integration.
-- `strategy: 'auto'` (default)
-  - If valid BeastPrint configuration is present (printer.key set), try BeastPrint first.
-  - If BeastPrint is not configured or fails, and valid Printdesk configuration is present (printerId, saleId, printUrl), try Printdesk next.
-  - If both BeastPrint and Printdesk are not usable or fail, and legacy options (or shared `html`/`url`) are provided, use legacy printing.
-  - If none of the three have usable configuration, throw an error.
-
-### HTML and URL sharing rules
-
-**HTML sharing**
-
-- Beast (`mode === 'html'`):
-  - If `beast.templateId` is set, it always wins and template mode is used.
-  - Else, if `beast.html` is set → it wins.
-  - Else, if top-level `html` is set → it is used (injected into `beast.html` by `print()`).
-- Legacy:
-  - If `legacy.html` is set → it wins.
-  - Else, if top-level `html` is set → it is used (injected into `legacy.html` by `print()`).
-
-**URL semantics**
-
-- Top-level `url` is “the URL to get printable HTML from”.
-
-- Beast (`mode === 'html'` and no templateId):
-
-  1. If `beast.html` is provided → use it.
-  2. Else, if `beast.url` is provided → fetch that URL as HTML and send it to BeastPrint.
-  3. Else, if top-level `html` is provided → it is used (injected into `beast.html`).
-  4. Else, if top-level `url` is provided → it is injected as `beast.url` and fetched as HTML.
-
-- Printdesk:
-
-  - `printdesk.printUrl` is the backend endpoint (e.g. `https://your-backend.example.com/printdesk`).
-  - If `printdesk.url` is set, it is passed to your backend as a `url` query parameter (also filled from shared `url` when not set).
-  - Your backend decides how to use that `url`.
-
-- Legacy:
-
-  1. Use `legacy.html` or shared `html` if present.
-  2. Else, use `legacy.url` or shared `url` to open in iframe/popup and print.
+That’s all `auto` does: it tries Beast first, then Printdesk, then Legacy, reusing shared `html`/`url` and (if configured) a Beast template.
 
 ---
 
 ### Debug mode
 
-For troubleshooting, you can enable a simple debug mode that logs internal decisions to the console.
+For troubleshooting, you can enable a debug log so you see exactly what `auto` is doing:
 
 ```ts
 import { print, configureDebug } from 'beastprint-sdk';
@@ -250,242 +280,60 @@ import { print, configureDebug } from 'beastprint-sdk';
 configureDebug({ enabled: true });
 
 await print({
-  strategy: 'legacy',
-  legacy: {
-    url: '/receipt/123',
-  },
+  strategy: 'auto',
+  beast: { /* ... */ },
+  printdesk: { /* ... */ },
+  legacy: { /* ... */ },
 });
 ```
 
-You can also enable debug only for a single call, without changing the global setting:
+Or per-call:
 
 ```ts
 await print({
-  strategy: 'legacy',
+  strategy: 'auto',
   debug: true,
-  legacy: {
-    url: '/receipt/123',
-  },
+  // ...
 });
 ```
 
-When enabled, debug logs look like:
+Example logs:
 
 ```text
-[beastprint:debug] print called { strategy: 'legacy', options: { ... } }
-[beastprint:debug] strategy=legacy → legacyPrint
-[beastprint:debug] legacyPrint called { url: '/receipt/123', popup: undefined, ... }
-[beastprint:debug] legacyPrint: URL mode { url: '/receipt/123', popup: undefined }
-[beastprint:debug] legacyPrint: URL → hidden iframe
+[beastprint:debug] print called { strategy: 'auto', ... }
+[beastprint:debug] auto: beast configuration check { hasBeastConfig: true, beastOpts: ... }
+[beastprint:debug] beastPrint: effective mode and config { hasTemplateId: true, mode: 'template', ... }
+[beastprint:debug] beastPrint: sending template print { ... }
+[beastprint:debug] auto → BeastPrint succeeded
 ```
 
-This is especially useful to verify whether `popup` is being set, which path is used (popup vs iframe), and how `auto` routing behaves.
+Or when Beast fails and templates are reused:
+
+```text
+[beastprint:debug] print: beast.templateId detected { templateId: 'default-receipt', ... }
+[beastprint:debug] renderTemplateToHtml: rendering via BeastPrint { ... }
+[beastprint:debug] print: rendered template HTML from beast.templateId for reuse { ... }
+[beastprint:debug] auto → Printdesk: injecting rendered Beast template HTML into printdeskOpts.html { ... }
+[beastprint:debug] auto → Printdesk succeeded
+```
 
 ---
 
 ## Legacy printing
 
-The **legacy** path is meant to support:
-
-- Existing HTML templates (iframes / popups).
-- Migration from older popup-based systems.
-- Precise-ish control over page/document size using CSS and window size.
-
-### 1. Basic browser print (Ctrl+P style)
-
-If you call `print` with no `legacy` options, it just calls `window.print()`:
-
-```ts
-await print({ strategy: 'legacy' });
-```
-
-If `window.print` is not available, it throws an error.
-
-### 2. Print an existing URL (popup window)
-
-```ts
-await print({
-  strategy: 'legacy',
-  legacy: {
-    url: '/receipt/123',
-    popup: true,            // open as a popup window
-    popupWidthPx: 400,
-    popupHeightPx: 600,
-  },
-});
-```
-
-This:
-
-- Opens a new window with `/receipt/123`.
-- Optionally sizes it with the provided pixel dimensions.
-- Calls `window.print()` on that window after load.
-
-Use this if you already have print-optimized routes.
-
-By default (when `popup` is not set), URL printing loads the URL into a hidden iframe and prints from there, so the user stays on the current page:
-
-```ts
-await print({
-  strategy: 'legacy',
-  legacy: {
-    url: '/receipt/123',
-    // popup: false by default → uses hidden iframe
-    // urlInIframe: true can be used to make this explicit
-  },
-});
-```
-
-### 3. Print HTML directly (iframe, default)
-
-```ts
-await print({
-  strategy: 'legacy',
-  legacy: {
-    html: `
-      <div>
-        <h1>Legacy HTML content</h1>
-        <p>Printed via iframe.</p>
-      </div>
-    `,
-    pageWidthMm: 80,
-    marginMm: 0,
-    hideAppChrome: true,
-  },
-});
-```
-
-Layout-related options:
-
-- `pageWidthMm` / `pageHeightMm` – used in a `@page { size: ... }` rule to hint the physical paper size (e.g. 80mm receipt, label height, etc.).
-- `marginMm` – used in `@page { margin: ... }` to control printer margins.
-- `hideAppChrome` – injects CSS to hide typical layout elements like `header`, `footer`, `.site-header`, `.site-footer`, `.app-header`, `.app-footer` inside the printed document.
-
-- The HTML is wrapped into a minimal standalone document.
-- `@page` is configured based on `pageWidthMm`, `pageHeightMm`, `marginMm`.
-- Common header/footer/nav classes are hidden when `hideAppChrome` is `true`.
-- Rendering is done in an invisible `<iframe>` injected into the page, then printed.
-
-### 4. Print HTML in a popup (legacy-compatible mode)
-
-If you prefer the old “popup renders a standalone print page” behavior:
-
-```ts
-await print({
-  strategy: 'legacy',
-  legacy: {
-    html: `
-      <div style="width: 300px;">
-        <h1>Receipt</h1>
-        <p>Some content...</p>
-      </div>
-    `,
-    popup: true,           // use a popup window instead of an iframe
-    popupWidthPx: 400,
-    popupHeightPx: 600,
-    pageWidthMm: 80,
-    marginMm: 0,
-    hideAppChrome: true,
-  },
-});
-```
-
-- A new window is opened with your HTML content.
-- The same `@page` and CSS rules are applied to control printed layout.
-- The popup auto-prints and then (optionally) auto-closes.
-
-Popup sizing options:
-
-- `popupWidthPx` / `popupHeightPx` – control the pixel size of the popup window when `popup: true`.
-
-> Note: browsers and printer drivers ultimately decide how strictly to honor `@page size` and margins. This library sets the correct CSS, but physical results can vary by device.
-
-### Legacy options reference
-
-- `html?: string` – raw HTML string to print.
-- `url?: string` – URL to open and print.
-- `pageWidthMm?: number` – physical page width hint in millimeters.
-- `pageHeightMm?: number` – physical page height hint in millimeters.
-- `marginMm?: number` – printer margin hint in millimeters.
-- `hideAppChrome?: boolean` – hide common app header/footer/nav elements in the printed document.
-- `popup?: boolean` – if `true`, use a separate popup window instead of an iframe (for both `url` and `html`).
-- `popupWidthPx?: number` – popup window width in pixels (when `popup: true`).
-- `popupHeightPx?: number` – popup window height in pixels (when `popup: true`).
-- `urlInIframe?: boolean` – explicitly request URL-in-iframe printing (by default, URLs are printed via iframe when `popup` is not set).
+See “Legacy printing” in the current README for details — it already matches the code (iframe/popup, cross-origin handling). No deprecated parts there.
 
 ---
 
 ## BeastPrint cloud printing
 
-The **BeastPrint** path sends jobs to:
-
-```txt
-POST https://print.beastscan.com/print
-Content-Type: application/json
-```
-
-### Template mode
-
-Use pre-defined templates on the BeastPrint service:
-
-```ts
-await print({
-  strategy: 'beast',
-  beast: {
-    mode: 'template',
-    templateId: 'default-receipt',
-    widthMm: 80,
-    data: {
-      store: { name: 'Guestify' },
-      time: new Date().toISOString(),
-    },
-    printer: {
-      key: 'YOUR_PRINTER_KEY',
-      profileKey: 'epson-tm-m30ii',
-    },
-  },
-});
-```
-
-### HTML mode
-
-Send raw HTML to BeastPrint:
-
-```ts
-await print({
-  strategy: 'beast',
-  beast: {
-    mode: 'html',
-    widthMm: 80,
-    html: `
-      <html>
-        <body>
-          <h1>BeastPrint HTML mode</h1>
-          <p>Printed via BeastPrint service.</p>
-        </body>
-      </html>
-    `,
-    printer: {
-      key: 'YOUR_PRINTER_KEY',
-      profileKey: 'epson-tm-m30ii',
-    },
-  },
-});
-```
-
-If BeastPrint responds with a non-2xx status, `print` throws an error with the status code and response body text (if available).
+See “BeastPrint cloud printing” section above — template and HTML modes are up to date and use the correct field names (`templateId`, `data`, `content`).
 
 ---
 
 ## Printdesk local printing
 
-The **Printdesk** path sends HTML to a local Printdesk agent, similar to BeastPrint HTML mode but without templates:
-
-- It uses `printdesk.html` if provided.
-- Otherwise it uses `printdesk.url` (or the shared top-level `url`) to fetch HTML.
-- Then it POSTs that HTML payload to a local endpoint (default `http://127.0.0.1:43594/print`).
-
-Example:
+The **Printdesk** path posts HTML to a local agent:
 
 ```ts
 await print({
@@ -499,107 +347,16 @@ await print({
 });
 ```
 
-Shared HTML/URL behavior:
+Behavior:
 
-- If `printdesk.html` is not set, but top-level `html` is, that HTML can be used by other strategies (legacy, beast) while Printdesk can rely on URL-based fetching.
-- If `printdesk.url` is not set, but top-level `url` is, it will be used as `printdesk.url` and fetched as HTML.
+1. If `printdesk.html` is set → use it.
+2. Else if `printdesk.url` (or shared `url`) is set:
+   - Fetch it as HTML.
+3. If Beast has a `templateId` and Printdesk has no `html`:
+   - Render the template via BeastPrint `/render/html`.
+   - Use that HTML as `printdesk.html`.
 
----
-
-## Migration patterns
-
-This SDK is designed to make migration from legacy printing to BeastPrint as smooth as possible.
-
-### 1. Start with legacy only
-
-```ts
-await print({
-  strategy: 'legacy',
-  legacy: {
-    html: renderLegacyReceipt(order),
-  },
-});
-```
-
-### 2. Move to `auto` with BeastPrint + legacy fallback
-
-```ts
-await print({
-  strategy: 'auto',
-  beast: {
-    mode: 'html',
-    widthMm: 80,
-    html: renderLegacyReceipt(order), // reuse existing template for now
-    printer: {
-      key: 'YOUR_PRINTER_KEY',
-      profileKey: 'epson-tm-m30ii',
-    },
-  },
-  legacy: {
-    html: renderLegacyReceipt(order), // fallback if BeastPrint is unavailable
-  },
-});
-```
-
-### 3. Fully switch to BeastPrint templates
-
-```ts
-await print({
-  strategy: 'beast',
-  beast: {
-    mode: 'template',
-    templateId: 'default-receipt',
-    widthMm: 80,
-    data: {
-      store: { name: 'Guestify' },
-      // other template data...
-    },
-    printer: {
-      key: 'YOUR_PRINTER_KEY',
-      profileKey: 'epson-tm-m30ii',
-    },
-  },
-});
-```
-
-### 4. Using shared HTML with smart `auto` (Beast → Printdesk → Legacy)
-
-```ts
-const html = renderLegacyReceipt(order);
-
-await print({
-  strategy: 'auto',
-  html, // shared across strategies
-
-  // Prefer BeastPrint in HTML mode, using the shared HTML
-  beast: {
-    mode: 'html',
-    widthMm: 80,
-    printer: {
-      key: 'YOUR_BEAST_KEY',
-      profileKey: 'epson-tm-m30ii',
-    },
-  },
-
-  // If BeastPrint is not available or fails, try Printdesk
-  printdesk: {
-    printerId: 'PRINTER_123',
-    saleId: 'SALE_456',
-    sample: false,
-    printUrl: 'https://your-backend.example.com/printdesk',
-  },
-
-  // Finally, fall back to legacy using the same HTML
-  legacy: {
-    pageWidthMm: 80,
-    marginMm: 0,
-    hideAppChrome: true,
-    // html will be filled from the top-level html if not set here
-  },
-});
-```
-
-With `configureDebug({ enabled: true })` or `debug: true` on the call, the console will show which of BeastPrint, Printdesk, and Legacy were tried and which one actually handled the job.
+If the local agent responds with non-2xx, `print` throws with status + body (if available).
 
 ---
 
@@ -612,32 +369,35 @@ npm install
 npm run build
 ```
 
-This produces:
+Outputs:
 
-- `dist/index.esm.js` (ESM build)
-- `dist/index.cjs` (CommonJS build)
-- `dist/index.d.ts` (TypeScript declarations)
-- `dist/beastprint.global.global.js` (browser-global IIFE)
+- `dist/index.esm.js` (ESM)
+- `dist/index.cjs` (CJS)
+- `dist/index.d.ts` (types)
+- `dist/beastprint.global.global.js` (IIFE global)
 
 ### Test harness
 
-A simple static test harness lives under `test/`:
+A static test harness lives under `test/`:
 
-- `test/index.html` – unified test page that covers:
+- `test/index.html` – unified page that covers:
   - Legacy printing (window.print, iframe, popup),
   - BeastPrint (template + HTML mode),
-  - Printdesk (backend + local agent).
+  - Printdesk (local agent HTML mode),
+  - `strategy: 'auto'` (Beast → Printdesk → Legacy).
 
-Run a static dev server (using `serve`):
+Run:
 
 ```bash
 npm run build
 npm run test:server
 ```
 
-Then open:
+Open:
 
 - `http://localhost:3000/test/index.html`
+
+Use the “Auto strategy” card to exercise `auto`, and the log panel + browser console (with debug enabled) to see exactly which strategies run and in what order.
 
 ---
 
