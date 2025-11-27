@@ -377,9 +377,23 @@ async function legacyPrint(options?: LegacyPrintOptions): Promise<void> {
       throw new Error('[beastprint] Cannot open window/iframe in non-browser environment');
     }
 
-    // If popup explicitly requested, use popup-based printing
+    const url = options.url;
+
+    // Detect if the URL is same-origin with the current page
+    const isSameOrigin =
+      typeof window !== 'undefined' &&
+      (() => {
+        try {
+          const u = new URL(url, window.location.href);
+          return u.origin === window.location.origin;
+        } catch {
+          return false;
+        }
+      })();
+
+    // If popup explicitly requested, use popup-based printing regardless of origin
     if (options.popup) {
-      debugLog('legacyPrint: URL → popup window');
+      debugLog('legacyPrint: URL → popup window', { url, isSameOrigin });
       const features = [
         options.popupWidthPx ? `width=${options.popupWidthPx}` : '',
         options.popupHeightPx ? `height=${options.popupHeightPx}` : '',
@@ -387,7 +401,7 @@ async function legacyPrint(options?: LegacyPrintOptions): Promise<void> {
         .filter(Boolean)
         .join(',');
 
-      const win = window.open(options.url, '_blank', features || undefined);
+      const win = window.open(url, '_blank', features || undefined);
       if (!win) {
         throw new Error('[beastprint] Popup blocked or failed to open window');
       }
@@ -404,8 +418,27 @@ async function legacyPrint(options?: LegacyPrintOptions): Promise<void> {
       return;
     }
 
-    debugLog('legacyPrint: URL → hidden iframe');
-    // Load URL into a hidden iframe and print from there
+    // Non-popup URL mode
+    if (!isSameOrigin) {
+      // We cannot safely call iframeWindow.print() on a cross-origin URL.
+      debugLog(
+        'legacyPrint: URL is cross-origin; opening in new tab without programmatic print',
+        { url }
+      );
+      console.warn(
+        `[beastprint] legacyPrint: URL "${url}" is cross-origin; cannot print via hidden iframe. ` +
+          'Opening in a new tab instead. User must trigger print manually.'
+      );
+
+      const win = window.open(url, '_blank');
+      if (!win) {
+        throw new Error('[beastprint] Popup blocked or failed to open window');
+      }
+      return;
+    }
+
+    // Same-origin: load URL into a hidden iframe and print from there
+    debugLog('legacyPrint: URL → hidden iframe (same-origin)', { url });
     const iframe = document.createElement('iframe');
     iframe.style.position = 'fixed';
     iframe.style.right = '0';
@@ -437,7 +470,7 @@ async function legacyPrint(options?: LegacyPrintOptions): Promise<void> {
       }
     };
 
-    iframe.src = options.url;
+    iframe.src = url;
     return;
   }
 
