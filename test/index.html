@@ -270,20 +270,6 @@
 
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1">
-                Printer options JSON (<code>printdesk.printerOptions</code>)
-              </label>
-              <textarea
-                id="input-printdesk-printeroptions"
-                class="w-full rounded-md border border-slate-300 px-2 py-1 text-xs font-mono"
-                rows="4"
-              ></textarea>
-              <p class="mt-1 text-[11px] text-slate-500">
-                These override the built‑in printerOptions defaults. Clear to use SDK defaults.
-              </p>
-            </div>
-
-            <div>
-              <label class="block text-xs font-medium text-slate-600 mb-1">
                 Printer JSON (<code>printdesk.printer</code>)
               </label>
               <textarea
@@ -344,9 +330,6 @@
       const printdeskUrlInput = document.getElementById('input-printdesk-url');
       const printdeskLocalUrlInput = document.getElementById('input-printdesk-localurl');
       const printdeskPdfOptionsInput = document.getElementById('input-printdesk-pdfoptions');
-      const printdeskPrinterOptionsInput = document.getElementById(
-        'input-printdesk-printeroptions'
-      );
       const printdeskPrinterInput = document.getElementById('input-printdesk-printer');
 
       const templateDataInput = document.getElementById('input-template-data');
@@ -404,16 +387,11 @@
         const sharedUrl = autoUrlInput?.value?.trim() || '';
 
         const pdfOptionsRaw = printdeskPdfOptionsInput?.value || '';
-        const printerOptionsRaw = printdeskPrinterOptionsInput?.value || '';
         const printerRaw = printdeskPrinterInput?.value || '';
 
         const autoPrintdeskPdfOptions = parseJsonOrUndefined(
           pdfOptionsRaw,
           'printdesk.pdfOptions'
-        );
-        const autoPrintdeskPrinterOptions = parseJsonOrUndefined(
-          printerOptionsRaw,
-          'printdesk.printerOptions'
         );
         const autoPrintdeskPrinter = parseJsonOrUndefined(printerRaw, 'printdesk.printer');
 
@@ -455,7 +433,6 @@
             // Printdesk: rely on shared html/url; options configured via the Printdesk section
             printdesk: {
               pdfOptions: autoPrintdeskPdfOptions,
-              printerOptions: autoPrintdeskPrinterOptions,
               printer: autoPrintdeskPrinter,
             },
 
@@ -650,14 +627,9 @@
           const localUrlRaw = printdeskLocalUrlInput?.value?.trim() || '';
 
           const pdfOptionsRaw = printdeskPdfOptionsInput?.value || '';
-          const printerOptionsRaw = printdeskPrinterOptionsInput?.value || '';
           const printerRaw = printdeskPrinterInput?.value || '';
 
           const pdfOptions = parseJsonOrUndefined(pdfOptionsRaw, 'printdesk.pdfOptions');
-          const printerOptions = parseJsonOrUndefined(
-            printerOptionsRaw,
-            'printdesk.printerOptions'
-          );
           const printer = parseJsonOrUndefined(printerRaw, 'printdesk.printer');
 
           log('Printdesk: starting');
@@ -674,7 +646,6 @@
                 url: url || undefined,
                 localUrl: localUrlRaw || undefined,
                 pdfOptions,
-                printerOptions,
                 printer,
               },
             });

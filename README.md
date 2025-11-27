@@ -161,14 +161,6 @@ export type PrintdeskPdfOptions = {
   dpi?: string;
 };
 
-export type PrintdeskPrinterOptions = {
-  group_id?: string | null;
-  now?: string | null;
-  wait_for_pull?: boolean;
-  copies?: number;
-  monochromeLogo?: boolean;
-};
-
 export type PrintdeskPrinter = {
   name: string;
   description?: string;
@@ -198,12 +190,6 @@ export type PrintdeskOptions = {
    * These override the built‑in defaults on a per-field basis.
    */
   pdfOptions?: PrintdeskPdfOptions;
-
-  /**
-   * Optional printer options forwarded to the Printdesk agent.
-   * These override the built‑in defaults on a per-field basis.
-   */
-  printerOptions?: PrintdeskPrinterOptions;
 
   /**
    * Optional printer selection for the agent.
@@ -410,13 +396,6 @@ Under the hood, the SDK posts a payload shaped like this to `localUrl`:
       "landscape": false,
       "dpi": "300"
     },
-    "printerOptions": {
-      "group_id": null,
-      "now": null,
-      "wait_for_pull": true,
-      "copies": 1,
-      "monochromeLogo": true
-    },
     "printer": {
       "name": "…",
       "description": "",
@@ -427,8 +406,8 @@ Under the hood, the SDK posts a payload shaped like this to `localUrl`:
 }
 ```
 
-- `pdfOptions` and `printerOptions` start with these defaults and can be overridden via
-  `printdesk.pdfOptions` and `printdesk.printerOptions` (field-by-field).
+- `pdfOptions` starts with these defaults and can be overridden via
+  `printdesk.pdfOptions`.
 - `printer` is only included if you pass `printdesk.printer`; otherwise the agent’s default
   printer is used.
 

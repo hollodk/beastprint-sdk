@@ -47,14 +47,6 @@ export type PrintdeskPdfOptions = {
   dpi?: string;
 };
 
-export type PrintdeskPrinterOptions = {
-  group_id?: string | null;
-  now?: string | null;
-  wait_for_pull?: boolean;
-  copies?: number;
-  monochromeLogo?: boolean;
-};
-
 export type PrintdeskPrinter = {
   name: string;
   description?: string;
@@ -84,12 +76,6 @@ export type PrintdeskOptions = {
    * These override the built‑in defaults on a per-field basis.
    */
   pdfOptions?: PrintdeskPdfOptions;
-
-  /**
-   * Optional printer options forwarded to the Printdesk agent.
-   * These override the built‑in defaults on a per-field basis.
-   */
-  printerOptions?: PrintdeskPrinterOptions;
 
   /**
    * Optional printer selection for the agent.
@@ -787,14 +773,6 @@ async function printdeskPrint(options?: PrintdeskOptions): Promise<void> {
     dpi: '300',
   };
 
-  const defaultPrinterOptions: PrintdeskPrinterOptions = {
-    group_id: null,
-    now: null,
-    wait_for_pull: true,
-    copies: 1,
-    monochromeLogo: true,
-  };
-
   const pdfOptions: PrintdeskPdfOptions = {
     ...defaultPdfOptions,
     ...options.pdfOptions,
@@ -808,11 +786,6 @@ async function printdeskPrint(options?: PrintdeskOptions): Promise<void> {
     },
   };
 
-  const printerOptions: PrintdeskPrinterOptions = {
-    ...defaultPrinterOptions,
-    ...options.printerOptions,
-  };
-
   // If printer is provided, use it; otherwise omit and let agent use its own default.
   const printer = options.printer;
 
@@ -822,7 +795,6 @@ async function printdeskPrint(options?: PrintdeskOptions): Promise<void> {
     payload: {
       html,
       pdfOptions,
-      printerOptions,
       ...(printer ? { printer } : {}),
     },
   };
