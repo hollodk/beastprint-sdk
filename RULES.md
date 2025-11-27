@@ -1,5 +1,7 @@
 Rules for printing:
 
+- beast.mode = 'template|html' should be able to switch dynamic, depending on if its printing as html or template
+
 - first priority is beastprint
 - check for beast.template, use that
 - then check for html in beast.html, use that
