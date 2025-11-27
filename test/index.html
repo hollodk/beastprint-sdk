@@ -17,9 +17,54 @@
         </p>
       </header>
 
-      <!-- Top: three wide cards -->
-      <main class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start mb-8">
-        <!-- Legacy printing -->
+      <!-- Top: method cards -->
+      <main class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start mb-8">
+        <!-- Auto strategy (full width on large screens) -->
+        <section class="bg-white shadow-sm border border-slate-200 rounded-xl p-6 lg:col-span-2">
+          <h2 class="text-xl font-semibold text-slate-800 mb-4">Auto strategy</h2>
+          <p class="text-sm text-slate-600 mb-4">
+            Test the smart <code>strategy: 'auto'</code> flow (Beast → Printdesk → Legacy) with shared
+            <code>html</code> and <code>url</code>.
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">
+                Shared HTML (<code>options.html</code>)
+              </label>
+              <textarea
+                id="input-auto-html"
+                class="w-full rounded-md border border-slate-300 px-2 py-1 text-xs font-mono"
+                rows="4"
+                placeholder="&lt;h1&gt;Shared HTML receipt&lt;/h1&gt;"
+              ></textarea>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">
+                Shared URL (<code>options.url</code>)
+              </label>
+              <input
+                id="input-auto-url"
+                type="text"
+                class="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+                placeholder="https://example.com/receipt/123"
+              />
+              <p class="mt-1 text-[11px] text-slate-500">
+                Used by legacy (iframe/popup) and as a fallback for Beast (HTML fetch) and Printdesk
+                (forwarded as <code>?url=</code> to your backend).
+              </p>
+            </div>
+          </div>
+
+          <button
+            id="btn-auto"
+            class="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+          >
+            Run strategy: 'auto'
+          </button>
+        </section>
+
+        <!-- Legacy printing (top-left) -->
         <section class="bg-white shadow-sm border border-slate-200 rounded-xl p-6">
           <h2 class="text-xl font-semibold text-slate-800 mb-4">Legacy printing</h2>
           <p class="text-sm text-slate-600 mb-4">
@@ -64,7 +109,7 @@
           </div>
         </section>
 
-        <!-- BeastPrint printing -->
+        <!-- BeastPrint printing (top-right) -->
         <section class="bg-white shadow-sm border border-slate-200 rounded-xl p-6">
           <h2 class="text-xl font-semibold text-slate-800 mb-4">BeastPrint API</h2>
           <p class="text-sm text-slate-600 mb-4">
@@ -112,8 +157,8 @@
           </div>
         </section>
 
-        <!-- Printdesk printing -->
-        <section class="bg-white shadow-sm border border-slate-200 rounded-xl p-6">
+        <!-- Printdesk printing (bottom, full width) -->
+        <section class="bg-white shadow-sm border border-slate-200 rounded-xl p-6 lg:col-span-2">
           <h2 class="text-xl font-semibold text-slate-800 mb-4">Printdesk</h2>
           <p class="text-sm text-slate-600 mb-4">
             Test the legacy Printdesk-style local printing (backend + local agent).
@@ -122,14 +167,30 @@
           <div class="space-y-3">
             <div>
               <label class="block text-xs font-medium text-slate-600 mb-1">
-                Backend print URL (<code>printUrl</code>)
+                HTML (<code>printdesk.html</code>, optional)
+              </label>
+              <textarea
+                id="input-printdesk-html"
+                class="w-full rounded-md border border-slate-300 px-2 py-1 text-xs font-mono"
+                rows="4"
+                placeholder="If empty, URL-based fetching or shared html/url will be used."
+              ></textarea>
+            </div>
+
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">
+                URL (<code>printdesk.url</code>, optional)
               </label>
               <input
-                id="input-printdesk-printurl"
+                id="input-printdesk-url"
                 type="text"
                 class="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
-                placeholder="https://your-backend.example.com/printdesk"
+                placeholder="https://example.com/printdesk-receipt"
               />
+              <p class="mt-1 text-[11px] text-slate-500">
+                If HTML is not provided, Printdesk will fetch this URL as HTML. If this is also
+                empty, the shared <code>options.url</code> will be used as a fallback (if set).
+              </p>
             </div>
 
             <div>
@@ -142,42 +203,6 @@
                 class="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
                 value="http://127.0.0.1:43594/print"
               />
-            </div>
-
-            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">
-                  Printer ID
-                </label>
-                <input
-                  id="input-printdesk-printer"
-                  type="text"
-                  class="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
-                  placeholder="PRINTER_123"
-                />
-              </div>
-              <div>
-                <label class="block text-xs font-medium text-slate-600 mb-1">
-                  Sale ID
-                </label>
-                <input
-                  id="input-printdesk-sale"
-                  type="text"
-                  class="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
-                  placeholder="SALE_456"
-                />
-              </div>
-            </div>
-
-            <div class="flex items-center justify-between">
-              <label class="inline-flex items-center gap-2 text-xs text-slate-600">
-                <input
-                  id="input-printdesk-sample"
-                  type="checkbox"
-                  class="rounded border-slate-300"
-                />
-                Sample
-              </label>
             </div>
 
             <button
@@ -217,11 +242,12 @@
       const printerKeyInput = document.getElementById('input-printer-key');
       const profileKeyInput = document.getElementById('input-profile-key');
 
-      const printdeskPrintUrlInput = document.getElementById('input-printdesk-printurl');
+      const autoHtmlInput = document.getElementById('input-auto-html');
+      const autoUrlInput = document.getElementById('input-auto-url');
+
+      const printdeskHtmlInput = document.getElementById('input-printdesk-html');
+      const printdeskUrlInput = document.getElementById('input-printdesk-url');
       const printdeskLocalUrlInput = document.getElementById('input-printdesk-localurl');
-      const printdeskPrinterInput = document.getElementById('input-printdesk-printer');
-      const printdeskSaleInput = document.getElementById('input-printdesk-sale');
-      const printdeskSampleInput = document.getElementById('input-printdesk-sample');
 
       const log = (msg) => {
         const ts = new Date().toISOString();
@@ -247,6 +273,50 @@
         }
         return { key, profileKey };
       };
+
+      // Auto: Beast → Printdesk → Legacy with shared html/url
+      document.getElementById('btn-auto')?.addEventListener('click', async () => {
+        const sharedHtml = autoHtmlInput?.value || '';
+        const sharedUrl = autoUrlInput?.value?.trim() || '';
+
+        log('Auto: starting with shared html/url');
+        if (!sharedHtml && !sharedUrl) {
+          log(
+            'Auto: INFO – no shared html/url provided; only explicit beast/printdesk/legacy configs will be used.'
+          );
+        }
+
+        try {
+          await print({
+            strategy: 'auto',
+            debug: true, // per-call debug to see full decision flow
+
+            html: sharedHtml || undefined,
+            url: sharedUrl || undefined,
+
+            // Beast: HTML mode by default; will use shared html/url if needed
+            beast: {
+              mode: 'html',
+              widthMm: 80,
+              printer: getPrinterConfig(),
+            },
+
+            // Printdesk:
+            printdesk: {
+            },
+
+            // Legacy: minimal config, html/url will be taken from shared fields
+            legacy: {
+              pageWidthMm: 80,
+              marginMm: 0,
+              hideAppChrome: true,
+            },
+          });
+          log('Auto: completed');
+        } catch (err) {
+          log('Auto: FAILED: ' + err);
+        }
+      });
 
       // Legacy: window.print()
       document.getElementById('btn-legacy-basic')?.addEventListener('click', async () => {
@@ -415,34 +485,26 @@
           }
         });
 
-      // Printdesk: backend + local agent
+      // Printdesk: local agent using HTML or URL
       document
         .getElementById('btn-printdesk')
         ?.addEventListener('click', async () => {
-          const printerId = printdeskPrinterInput?.value?.trim() || '';
-          const saleId = printdeskSaleInput?.value?.trim() || '';
-          const printUrl = printdeskPrintUrlInput?.value?.trim() || '';
+          const html = printdeskHtmlInput?.value || '';
+          const url = printdeskUrlInput?.value?.trim() || '';
           const localUrlRaw = printdeskLocalUrlInput?.value?.trim() || '';
-          const sample = !!printdeskSampleInput?.checked;
 
           log('Printdesk: starting');
-          if (!printUrl) {
-            log('Printdesk: ERROR – printUrl is required');
-            return;
-          }
-          if (!printerId || !saleId) {
-            log('Printdesk: ERROR – printerId and saleId are required');
-            return;
+          if (!html && !url && !autoUrlInput?.value) {
+            log('Printdesk: INFO – no html/url set here or shared; request will fail.');
           }
 
           try {
             await print({
               strategy: 'printdesk',
+              debug: true,
               printdesk: {
-                printerId,
-                saleId,
-                sample,
-                printUrl,
+                html: html || undefined,
+                url: url || undefined,
                 localUrl: localUrlRaw || undefined,
               },
             });

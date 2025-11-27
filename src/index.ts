@@ -29,19 +29,22 @@ export type BeastPrintOptions = {
   data?: Record<string, any>;
   printer?: BeastPrintPrinter;
   html?: string;   // used when mode === 'html'
+  url?: string;    // URL to fetch HTML from when mode === 'html'
 };
 
 export type PrintdeskOptions = {
-  printerId: string;
-  saleId: string;
-  sample: boolean;
   /**
-   * The URL of your backend that returns the payload for the local printdesk service.
-   * Equivalent to the old `printUrl` in your jQuery example.
+   * Raw HTML string to send to the local Printdesk service.
+   * If not provided, URL-based fetching will be used.
    */
-  printUrl: string;
+  html?: string;
   /**
-   * URL of the local printdesk endpoint.
+   * URL to fetch HTML from. Used if html is not provided.
+   * If not set here, the shared top-level url will be used as a fallback.
+   */
+  url?: string;
+  /**
+   * URL of the local Printdesk endpoint.
    * Defaults to 'http://127.0.0.1:43594/print'.
    */
   localUrl?: string;
@@ -136,10 +139,19 @@ export async function print(options: PrintOptions = {}): Promise<void> {
     if (beastOpts && sharedHtml && beastOpts.mode === 'html' && !beastOpts.html) {
       beastOpts.html = sharedHtml;
     }
+    // If beast.url is not set but shared url exists, use shared url
+    if (beastOpts && sharedUrl && beastOpts.url == null) {
+      beastOpts.url = sharedUrl;
+    }
 
     const printdeskOpts: PrintdeskOptions | undefined = options.printdesk
       ? { ...options.printdesk }
       : undefined;
+
+    // If printdesk.url is not set but shared url exists, use shared url
+    if (printdeskOpts && sharedUrl && printdeskOpts.url == null) {
+      printdeskOpts.url = sharedUrl;
+    }
 
     debugLog('print called', {
       strategy,
@@ -225,12 +237,10 @@ export async function print(options: PrintOptions = {}): Promise<void> {
     // 2) Try Printdesk if minimally configured
     const hasPrintdeskConfig =
       !!printdeskOpts &&
-      typeof printdeskOpts.printerId === 'string' &&
-      printdeskOpts.printerId.length > 0 &&
-      typeof printdeskOpts.saleId === 'string' &&
-      printdeskOpts.saleId.length > 0 &&
-      typeof printdeskOpts.printUrl === 'string' &&
-      printdeskOpts.printUrl.length > 0;
+      (
+        (typeof printdeskOpts.html === 'string' && printdeskOpts.html.length > 0) ||
+        (typeof printdeskOpts.url === 'string' && printdeskOpts.url.length > 0)
+      );
 
     debugLog('auto: printdesk configuration check', { hasPrintdeskConfig, printdeskOpts });
 
@@ -530,54 +540,42 @@ async function printdeskPrint(options?: PrintdeskOptions): Promise<void> {
     throw new Error('[beastprint] No Printdesk options provided');
   }
 
-  const { printerId, saleId, sample, printUrl } = options;
   const localUrl = options.localUrl ?? 'http://127.0.0.1:43594/print';
 
-  if (!printerId) {
-    throw new Error('[beastprint] Printdesk: printerId is required');
-  }
-  if (!saleId) {
-    throw new Error('[beastprint] Printdesk: saleId is required');
-  }
-  if (!printUrl) {
-    throw new Error('[beastprint] Printdesk: printUrl is required');
-  }
+  // Priority:
+  // 1) options.html
+  // 2) options.url (fetch HTML from URL)
+  let html = options.html;
 
-  // 1) Call your backend (printUrl) to get the payload
-  const qs = new URLSearchParams({
-    printer: printerId,
-    sale: saleId,
-    sample: String(sample),
-  });
-
-  const backendResponse = await fetch(`${printUrl}?${qs.toString()}`, {
-    method: 'GET',
-  });
-
-  if (!backendResponse.ok) {
-    let text = '';
-    try {
-      text = await backendResponse.text();
-    } catch {
-      // ignore
+  if (!html && options.url) {
+    debugLog('printdeskPrint: fetching HTML from url', options.url);
+    const res = await fetch(options.url);
+    if (!res.ok) {
+      let text = '';
+      try {
+        text = await res.text();
+      } catch {
+        // ignore
+      }
+      throw new Error(
+        `[beastprint] Printdesk: failed to fetch HTML from url: ${res.status}${
+          text ? ` - ${text}` : ''
+        }`
+      );
     }
+    html = await res.text();
+  }
+
+  if (!html) {
     throw new Error(
-      `[beastprint] Printdesk backend error: ${backendResponse.status}${
-        text ? ` - ${text}` : ''
-      }`
+      '[beastprint] Printdesk: html or url (or shared html/url) is required'
     );
   }
 
-  let payload: unknown;
-  try {
-    payload = await backendResponse.json();
-  } catch {
-    throw new Error(
-      '[beastprint] Printdesk: failed to parse backend response as JSON'
-    );
-  }
+  // Send HTML to the local Printdesk endpoint.
+  // If your agent expects a different payload, adjust this object.
+  const payload = { html };
 
-  // 2) Send payload to local Printdesk service
   const localResponse = await fetch(localUrl, {
     method: 'POST',
     headers: {
@@ -615,51 +613,119 @@ async function beastPrint(options?: BeastPrintOptions): Promise<void> {
     throw new Error('[beastprint] printer.key is required for BeastPrint');
   }
 
+  // If templateId is set, template mode wins over everything else
+  // Regardless of options.mode, we treat this as template print.
+  if (options.templateId) {
+    const body: any = {
+      mode: 'template',
+      widthMm: options.widthMm ?? 80,
+      templateId: options.templateId,
+      data: options.data ?? {},
+      printer: {
+        key: options.printer.key,
+        profileKey: options.printer.profileKey,
+      },
+    };
+
+    const response = await fetch('https://print.beastscan.com/print', {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      let errorMessage = `BeastPrint error: ${response.status}`;
+      try {
+        const text = await response.text();
+        if (text) errorMessage += ` - ${text}`;
+      } catch {
+        // ignore parse error
+      }
+      throw new Error(errorMessage);
+    }
+    return;
+  }
+
+  // Otherwise, we honor mode, defaulting to 'template' if unset
   const mode = options.mode ?? 'template';
 
-  const body: any = {
+  const baseBody: any = {
     mode,
     widthMm: options.widthMm ?? 80,
     printer: {
       key: options.printer.key,
-      profileKey: options.printer.profileKey
-    }
+      profileKey: options.printer.profileKey,
+    },
   };
 
   if (mode === 'template') {
-    if (!options.templateId) {
-      throw new Error('[beastprint] templateId is required when mode="template"');
-    }
-    body.templateId = options.templateId;
-    body.data = options.data ?? {};
+    // No templateId given but mode='template': must fail explicitly
+    throw new Error(
+      '[beastprint] templateId is required when mode="template" and no shared templateId is provided'
+    );
   } else if (mode === 'html') {
-    if (!options.html) {
-      throw new Error('[beastprint] html is required when mode="html"');
+    // Priority within HTML mode (after templateId check above):
+    // 1) options.html (could be from beast.html or shared html injected in print())
+    // 2) options.url (could be from beast.url or shared url injected in print())
+
+    let html = options.html;
+
+    if (!html && options.url) {
+      debugLog('beastPrint: fetching HTML from url', options.url);
+      const res = await fetch(options.url);
+      if (!res.ok) {
+        let text = '';
+        try {
+          text = await res.text();
+        } catch {
+          // ignore
+        }
+        throw new Error(
+          `[beastprint] Failed to fetch HTML from url: ${res.status}${
+            text ? ` - ${text}` : ''
+          }`
+        );
+      }
+      html = await res.text();
     }
-    body.html = options.html;
+
+    if (!html) {
+      throw new Error(
+        '[beastprint] html or url is required when mode="html" and no templateId is set'
+      );
+    }
+
+    const body = {
+      ...baseBody,
+      html,
+    };
+
+    const response = await fetch('https://print.beastscan.com/print', {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      let errorMessage = `BeastPrint error: ${response.status}`;
+      try {
+        const text = await response.text();
+        if (text) errorMessage += ` - ${text}`;
+      } catch {
+        // ignore parse error
+      }
+      throw new Error(errorMessage);
+    }
+
+    // For now, keep API as Promise<void>.
+    return;
   } else {
     throw new Error(`[beastprint] Unsupported mode: ${mode}`);
   }
-
-  const response = await fetch('https://print.beastscan.com/print', {
-    method: 'POST',
-    headers: {
-      accept: 'application/json',
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(body)
-  });
-
-  if (!response.ok) {
-    let errorMessage = `BeastPrint error: ${response.status}`;
-    try {
-      const text = await response.text();
-      if (text) errorMessage += ` - ${text}`;
-    } catch {
-      // ignore parse error
-    }
-    throw new Error(errorMessage);
-  }
-
-  // For now, keep API as Promise<void>.
 }

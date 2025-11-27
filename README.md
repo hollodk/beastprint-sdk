@@ -129,17 +129,20 @@ export type BeastPrintOptions = {
   data?: Record<string, any>;
   printer?: BeastPrintPrinter;
   html?: string;   // used when mode === 'html'
+  url?: string;    // URL to fetch HTML from when mode === 'html'
 };
 
 export type PrintdeskOptions = {
-  printerId: string;
-  saleId: string;
-  sample: boolean;
   /**
-   * Backend URL that returns the payload for the local Printdesk service.
-   * Equivalent to the old `printUrl` in the jQuery example.
+   * Raw HTML string to send to the local Printdesk service.
+   * If not provided, URL-based fetching will be used.
    */
-  printUrl: string;
+  html?: string;
+  /**
+   * URL to fetch HTML from. Used if html is not provided.
+   * If not set here, the shared top-level url will be used as a fallback.
+   */
+  url?: string;
   /**
    * Local Printdesk endpoint, defaults to 'http://127.0.0.1:43594/print'.
    */
@@ -201,6 +204,40 @@ await print({
   - If both BeastPrint and Printdesk are not usable or fail, and legacy options (or shared `html`/`url`) are provided, use legacy printing.
   - If none of the three have usable configuration, throw an error.
 
+### HTML and URL sharing rules
+
+**HTML sharing**
+
+- Beast (`mode === 'html'`):
+  - If `beast.templateId` is set, it always wins and template mode is used.
+  - Else, if `beast.html` is set → it wins.
+  - Else, if top-level `html` is set → it is used (injected into `beast.html` by `print()`).
+- Legacy:
+  - If `legacy.html` is set → it wins.
+  - Else, if top-level `html` is set → it is used (injected into `legacy.html` by `print()`).
+
+**URL semantics**
+
+- Top-level `url` is “the URL to get printable HTML from”.
+
+- Beast (`mode === 'html'` and no templateId):
+
+  1. If `beast.html` is provided → use it.
+  2. Else, if `beast.url` is provided → fetch that URL as HTML and send it to BeastPrint.
+  3. Else, if top-level `html` is provided → it is used (injected into `beast.html`).
+  4. Else, if top-level `url` is provided → it is injected as `beast.url` and fetched as HTML.
+
+- Printdesk:
+
+  - `printdesk.printUrl` is the backend endpoint (e.g. `https://your-backend.example.com/printdesk`).
+  - If `printdesk.url` is set, it is passed to your backend as a `url` query parameter (also filled from shared `url` when not set).
+  - Your backend decides how to use that `url`.
+
+- Legacy:
+
+  1. Use `legacy.html` or shared `html` if present.
+  2. Else, use `legacy.url` or shared `url` to open in iframe/popup and print.
+
 ---
 
 ### Debug mode
@@ -218,6 +255,7 @@ await print({
     url: '/receipt/123',
   },
 });
+```
 
 You can also enable debug only for a single call, without changing the global setting:
 
@@ -229,7 +267,6 @@ await print({
     url: '/receipt/123',
   },
 });
-```
 ```
 
 When enabled, debug logs look like:
@@ -442,10 +479,11 @@ If BeastPrint responds with a non-2xx status, `print` throws an error with the s
 
 ## Printdesk local printing
 
-The **Printdesk** path is a convenience wrapper around a legacy local print service:
+The **Printdesk** path sends HTML to a local Printdesk agent, similar to BeastPrint HTML mode but without templates:
 
-1. Call your backend (`printUrl`) with query parameters `{ printer, sale, sample }`.
-2. Take the backend response (expected JSON) and forward it as a JSON `POST` to a local service (default `http://127.0.0.1:43594/print`).
+- It uses `printdesk.html` if provided.
+- Otherwise it uses `printdesk.url` (or the shared top-level `url`) to fetch HTML.
+- Then it POSTs that HTML payload to a local endpoint (default `http://127.0.0.1:43594/print`).
 
 Example:
 
@@ -453,44 +491,18 @@ Example:
 await print({
   strategy: 'printdesk',
   printdesk: {
-    printerId: 'PRINTER_123',
-    saleId: 'SALE_456',
-    sample: false,
-    printUrl: 'https://your-backend.example.com/printdesk',
+    html: '<h1>Local Printdesk HTML</h1>',
+    // Or:
+    // url: 'https://example.com/printdesk-receipt',
     // localUrl: 'http://127.0.0.1:43594/print', // optional override
   },
 });
 ```
 
-This corresponds roughly to the legacy jQuery pattern:
+Shared HTML/URL behavior:
 
-```js
-function printdesk(printerId, sample, saleId) {
-  $.ajax({
-    url: printUrl,
-    data: {
-      printer: printerId,
-      sale: saleId,
-      sample: sample,
-    },
-  }).done(function (res) {
-    var url = 'http://127.0.0.1:43594/print';
-    var payload = res;
-
-    $.ajax({
-      url: url,
-      dataType: 'json',
-      contentType: 'application/json; charset=utf-8',
-      method: 'POST',
-      data: JSON.stringify(payload),
-    }).done(function (res) {
-      console.log(res);
-    });
-  });
-}
-```
-
-The SDK version uses `fetch` and throws errors when either the backend or local call fails.
+- If `printdesk.html` is not set, but top-level `html` is, that HTML can be used by other strategies (legacy, beast) while Printdesk can rely on URL-based fetching.
+- If `printdesk.url` is not set, but top-level `url` is, it will be used as `printdesk.url` and fetched as HTML.
 
 ---
 
@@ -611,9 +623,10 @@ This produces:
 
 A simple static test harness lives under `test/`:
 
-- `test/legacy.html` – tests legacy printing (window.print, iframe).
-- `test/global.html` – tests browser global bundle (`window.beastprint.print`).
-- `test/beast.html` – tests BeastPrint API; requires a real printer key.
+- `test/index.html` – unified test page that covers:
+  - Legacy printing (window.print, iframe, popup),
+  - BeastPrint (template + HTML mode),
+  - Printdesk (backend + local agent).
 
 Run a static dev server (using `serve`):
 
@@ -624,11 +637,7 @@ npm run test:server
 
 Then open:
 
-- `http://localhost:3000/test/legacy.html`
-- `http://localhost:3000/test/global.html`
-- `http://localhost:3000/test/beast.html`
-
-Replace `REPLACE_WITH_REAL_PRINTER_KEY` in `test/beast.html` with your actual BeastPrint printer key before testing the cloud endpoint.
+- `http://localhost:3000/test/index.html`
 
 ---
 
